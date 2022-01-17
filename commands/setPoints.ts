@@ -1,4 +1,4 @@
-import userModel from "../db/user";
+import { updateUser } from "../db/user";
 import { ICallback, ICommand } from "../wokTypes";
 
 const setPoints: ICommand = {
@@ -13,23 +13,19 @@ const setPoints: ICommand = {
     init: () => {},
     callback: async (options: ICallback) => {
         const { message, args } = options
-        const id = args[0].replace(/\D/g,'')
 
-        const result = await userModel.updateOne(
-            {id: id},
-            {$set: {points: parseInt(args[1].replace(/\D/g,''))}}
-        )
-
-        if (!result) {
-            await new userModel({
-                id: id,
-                points: parseInt(args[1].replace(/\D/g,''))
-            }).save()
+        const points = Number(args[1])
+        console.log(points)
+        if (isNaN(points)) {
+            message.reply({
+                content: `${args[1]} ain a valid number :c`
+            })
+            return
         }
 
-        message.reply({
-            content: `${args[0]} points set to ${args[1]}`
-        })
+        const user = await updateUser(args[0].replace(/\D/g,''), points)
+
+        message.reply({content: `${args[0]} points set to ${user.points}`})
     }
 }
 

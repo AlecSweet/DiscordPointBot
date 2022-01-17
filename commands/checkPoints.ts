@@ -1,4 +1,4 @@
-import userModel from "../db/user";
+import { getUser } from "../db/user";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -12,20 +12,9 @@ const points: ICommand = {
     callback: async (options: ICallback) => {
         const { message, args } = options
 
-        const result = await userModel.find({id: args[0].replace(/\D/g,'')})
+        const user = await getUser(args[0].replace(/\D/g,''))
 
-        if (!result[0]) {
-            await new userModel({
-                id: args[0].replace(/\D/g,''),
-                points: 0
-            }).save()
-        }
-
-        const points = result[0] ? result[0].points : 0;
-
-        message.reply({
-            content: `${args[0]} has ${points} points`
-        })
+        message.reply({content: `${args[0]} has ${user.points} points`})
     }
 }
 
