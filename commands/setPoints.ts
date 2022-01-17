@@ -15,11 +15,8 @@ const setPoints: ICommand = {
         const { message, args } = options
 
         const points = Number(args[1])
-        console.log(points)
         if (isNaN(points)) {
-            message.reply({
-                content: `${args[1]} ain a valid number :c`
-            })
+            message.reply({content: `${args[1]} ain a valid number :c`})
             return
         }
 

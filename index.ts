@@ -1,7 +1,8 @@
-import { Client, Intents } from "discord.js";
+import { Client, Intents, VoiceState } from "discord.js";
 import WOKCommands from "wokcommands";
 import path from "path";
 import * as dotenv from "dotenv"
+import handleVoiceActivity from "./events/handleVoiceActivity";
 dotenv.config()
 
 const client = new Client({ 
@@ -9,7 +10,10 @@ const client = new Client({
             Intents.FLAGS.GUILDS, 
             Intents.FLAGS.GUILD_MESSAGES, 
             Intents.FLAGS.DIRECT_MESSAGES, 
-            Intents.FLAGS.GUILD_MEMBERS
+            Intents.FLAGS.GUILD_MEMBERS,
+            Intents.FLAGS.GUILD_PRESENCES,
+            Intents.FLAGS.GUILD_MESSAGE_REACTIONS,
+            Intents.FLAGS.GUILD_VOICE_STATES
         ] 
 })
 
@@ -22,5 +26,10 @@ client.on('ready', () => {
         botOwners: '146034047112577025'
     })
 })
+
+client.on('voiceStateUpdate', async (oldState, newState) => {
+    await handleVoiceActivity(oldState, newState)
+})
+
 
 client.login(process.env.TOKEN)
