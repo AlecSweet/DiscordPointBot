@@ -12,4 +12,6 @@ const userSchema = new Schema({
   },
 });
 
-module.exports = model['user'] || model('user', userSchema);
+const userModel = model['user'] || model('user', userSchema);
+
+export default userModel;

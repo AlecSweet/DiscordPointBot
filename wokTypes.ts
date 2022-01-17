@@ -62,6 +62,7 @@ export interface ICommand {
   description: string
   callback?(obj: ICallback): any
   error?(obj: IErrorObject): any
+  init?(): any
   minArgs?: number
   maxArgs?: number
   syntaxError?: string//{ [key: string]: string }
