@@ -1,4 +1,4 @@
-import { getUser } from "../db/user";
+import getUserAndAccruePoints from "../util/accruePointUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -12,7 +12,7 @@ const points: ICommand = {
     callback: async (options: ICallback) => {
         const { message, args } = options
 
-        const user = await getUser(args[0].replace(/\D/g,''))
+        const user = await getUserAndAccruePoints(args[0].replace(/\D/g,''))
 
         message.reply({content: `${args[0]} has ${user.points} points`})
     }

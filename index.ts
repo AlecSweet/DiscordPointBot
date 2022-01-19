@@ -1,8 +1,8 @@
-import { Client, Intents, VoiceState } from "discord.js";
+import { Client, Intents } from "discord.js";
 import WOKCommands from "wokcommands";
 import path from "path";
-import * as dotenv from "dotenv"
 import handleVoiceActivity from "./events/handleVoiceActivity";
+import * as dotenv from "dotenv"
 dotenv.config()
 
 const client = new Client({ 
