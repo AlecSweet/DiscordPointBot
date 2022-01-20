@@ -1,7 +1,7 @@
 import { VoiceState } from "discord.js"
 import { updateUser } from "../db/user"
 import * as dotenv from "dotenv"
-import { disableUserActivityAndAccruePoints } from "../util/accruePointUtil"
+import { disableUserActivityAndAccruePoints } from "../util/userUtil"
 dotenv.config()
 
 const isActive = (newState: VoiceState): boolean => {

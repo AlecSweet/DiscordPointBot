@@ -1,4 +1,4 @@
-import getUserAndAccruePoints from "../util/accruePointUtil";
+import getUserAndAccruePoints from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -8,7 +8,6 @@ const points: ICommand = {
     expectedArgs: '<users @>',
     minArgs: 1,
     maxArgs: 1,
-    init: () => {},
     callback: async (options: ICallback) => {
         const { message, args } = options
 

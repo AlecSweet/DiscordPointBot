@@ -4,6 +4,7 @@ const stealInfo: ICommand = {
     name: 'stealInfo',
     category: 'asd',
     description: 'asds',
+    ownerOnly: true,
     callback: (options: ICallback) => {
         const { guild, message } = options
 

@@ -1,11 +1,10 @@
-import getUserAndAccruePoints from "../util/accruePointUtil";
+import getUserAndAccruePoints from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const myPoints: ICommand = {
     name: 'myPoints',
     category: 'pointCheck',
     description: 'Check my points',
-    init: () => {},
     callback: async (options: ICallback) => {
         const { message } = options
 

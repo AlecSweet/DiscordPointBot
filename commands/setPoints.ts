@@ -10,7 +10,6 @@ const setPoints: ICommand = {
     maxArgs: 2,
     ownerOnly: true,
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
-    init: () => {},
     callback: async (options: ICallback) => {
         const { message, args } = options
 

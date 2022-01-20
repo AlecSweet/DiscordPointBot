@@ -7,6 +7,7 @@ const getId: ICommand = {
     expectedArgs: '<users @>',
     minArgs: 1,
     maxArgs: 1,
+    ownerOnly: true,
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: (options: ICallback) => {
         const { message, args } = options
