@@ -2,7 +2,7 @@ import { isValidNumberArg } from "../util/isValidNumberArg";
 import getUserAndAccruePoints, { addPoints } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
-const setPoints: ICommand = {
+const give: ICommand = {
     name: 'give',
     category: 'pointGain',
     description: 'Give points to player',
@@ -54,4 +54,4 @@ const setPoints: ICommand = {
     }
 }
 
-export default setPoints
+export default give
