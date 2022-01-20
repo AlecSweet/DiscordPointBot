@@ -4,23 +4,23 @@ import * as dotenv from "dotenv"
 dotenv.config()
 
 const myPoints: ICommand = {
-    name: 'gamble',
+    name: 'flip',
     category: 'gambling',
     description: 'lose some points',
     expectedArgs: '<# of points to lose>',
     minArgs: 1,
     maxArgs: 1,
-    cooldown: '30s',
+    cooldown: '6s',
     callback: async (options: ICallback) => {
         const { message, args } = options
 
-        const points = Number(args[0])
-        if (isNaN(points)) {
-            message.reply({content: `${args[0]} ain a valid number :c`})
+        const user = await getUserAndAccruePoints(message.author.id)
+        
+        const points = args[0].toUpperCase() === 'ALL' ? user.points : Number(args[0])
+        if (isNaN(points) || !Number.isInteger(points) || points < 1) {
+            message.reply({content: `${points === 0 ? 0 : args[0]} ain a valid bet ${process.env.NOPPERS_EMOJI}`})
             return
         }
-
-        const user = await getUserAndAccruePoints(message.author.id)
 
         if (points > user.points) {
             message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
@@ -32,7 +32,7 @@ const myPoints: ICommand = {
             await new Promise(resolve => setTimeout(resolve, 400))
         ]);
 
-        if (Math.random() < .485) {
+        if (Math.random() < .5) {
             const newUser = await addPoints(user, points)
             await message.react('✅')
             message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${newUser.points} points now.`})

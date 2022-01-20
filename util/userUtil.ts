@@ -1,6 +1,8 @@
 import { getUser, IUser, updateUser } from "../db/user"
 
 const accruePoints = async (user: IUser, disableActivity: boolean, addPoints?: number): Promise<IUser> => {
+    addPoints = (addPoints !== undefined ? addPoints : 0)
+    
     if (user.activeStartDate) {
         const currentDate = new Date()
         const timeDifference = Math.abs(currentDate.getTime() - user.activeStartDate.getTime())
@@ -11,7 +13,7 @@ const accruePoints = async (user: IUser, disableActivity: boolean, addPoints?: n
         const minutesActive = Math.floor(timeDifference / 60000)
         user = await updateUser(
             user.id, 
-            user.points + minutesActive + (addPoints ? addPoints : 0), 
+            user.points + minutesActive + addPoints, 
             disableActivity ? null : newActiveStartDate
         )
     } else if (!user.activeStartDate && addPoints) {

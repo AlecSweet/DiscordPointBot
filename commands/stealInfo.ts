@@ -20,6 +20,7 @@ const stealInfo: ICommand = {
                 const memStrings: string[] = mems.map(m => {
                     return `Id  ${m.id}, Name: ${m.name}, Nickname: ${m.nickname}`
                 })
+                
                 message.reply({
                     content: memStrings.join('\n')
                 })

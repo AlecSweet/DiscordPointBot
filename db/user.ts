@@ -15,8 +15,7 @@ const userSchema = new Schema({
     },
     points: {
         type: Number,
-        default: process.env.DEFAULT_POINTS,
-        required: true
+        default: process.env.DEFAULT_POINTS
     },
     activeStartDate: {
         type: Date,
@@ -40,13 +39,13 @@ export const updateUser = async (id: string, points?: number, activeStartDate?: 
     const updateResult = await userModel.findOneAndUpdate(
         {id},
         {$set: {
-            ...(points && {points}),
+            ...(points !== undefined && {points}),
             ...(activeStartDate !== undefined && {activeStartDate})
         }},
         {new: true}
     )
     const userEntry = updateResult ? updateResult : await insertUser(id, points, activeStartDate)
-
+    
     return {id, points: userEntry.points, activeStartDate: userEntry.activeStartDate}
 }
 

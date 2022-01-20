@@ -19,6 +19,7 @@ const client = new Client({
 
 client.on('ready', () => {
     console.log(`Logged in as ${client.user?.tag}!`);
+    //console.log(client.guilds.cache)
     new WOKCommands(client, {
         commandsDir: path.join(__dirname, 'commands'),
         typeScript: true,
