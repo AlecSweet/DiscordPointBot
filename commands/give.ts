@@ -1,5 +1,6 @@
-import { isValidNumberArg } from "../util/isValidNumberArg";
-import getUserAndAccruePoints, { addPoints } from "../util/userUtil";
+import isValidNumberArg from "../util/isValidNumberArg";
+import isValidUserArg from "../util/isValidUserArg";
+import getUserAndAccruePoints, { addPoints, checkAndTriggerUserCooldown } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const give: ICommand = {
@@ -9,7 +10,7 @@ const give: ICommand = {
     expectedArgs: '<users @> <number>',
     minArgs: 2,
     maxArgs: 2,
-    cooldown: '10s',
+    cooldown: '30s',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
@@ -17,6 +18,23 @@ const give: ICommand = {
         const gifteeId = args[0].replace(/\D/g,'')
         if (gifteeId === message.author.id) {
             message.reply({content: `so kind... ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
+        if (!(await isValidUserArg(gifteeId, guild))) {
+            message.reply({content: `Dont know user ${args[0]} ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
+        const cooldown = await checkAndTriggerUserCooldown(gifteeId)
+        if (cooldown > -1) {
+            message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${gifteeId}> ${process.env.NOPPERS_EMOJI}>`})
+            return
+        }
+
+        const cooldown2 = await checkAndTriggerUserCooldown(message.author.id)
+        if (cooldown2 > -1) {
+            message.reply({content: `Wait ${Math.ceil(cooldown2/1000)} seconds to target commands at <@${message.author.id}> ${process.env.NOPPERS_EMOJI}`})
             return
         }
 
@@ -34,21 +52,8 @@ const give: ICommand = {
             return
         }
 
-        let userFound = false
-        try {
-            if (await guild.members.fetch(gifteeId)) {
-                userFound = true
-            }
-        // eslint-disable-next-line no-empty
-        } catch(e) {}
-        
-        if (!userFound) {
-            message.reply({content: `Dont know user ${args[0]} ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
-
         const giftee = await addPoints(await getUserAndAccruePoints(gifteeId), points)
-        const author = await addPoints(user, -points)
+        const author = await addPoints(await getUserAndAccruePoints(message.author.id), -points)
 
         message.reply({content: `You gave <@${giftee.id}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
     }

@@ -6,6 +6,23 @@ export interface IUser {
     id: string
     points: number
     activeStartDate: Date | null
+    flipsLost: number
+    flipsWon: number
+    pointsWon: number
+    pointsLost: number
+    secondsActive: number
+    cooldown: Date
+}
+
+export interface IUserUpdates {
+    points?: number
+    activeStartDate?: Date | null
+    flipsLost?: number
+    flipsWon?: number
+    pointsWon?: number
+    pointsLost?: number
+    secondsActive?: number
+    cooldown?: Date
 }
 
 const userSchema = new Schema({
@@ -20,6 +37,30 @@ const userSchema = new Schema({
     activeStartDate: {
         type: Date,
         default: null
+    },
+    flipsLost: {
+        type: Number,
+        default: 0
+    },
+    flipsWon: {
+        type: Number,
+        default: 0
+    },
+    pointsWon: {
+        type: Number,
+        default: 0
+    },
+    pointsLost: {
+        type: Number,
+        default: 0
+    },
+    secondsActive: {
+        type: Number,
+        default: 0
+    },
+    cooldown: {
+        type: Date,
+        default: new Date()
     }
 });
 
@@ -29,32 +70,47 @@ export default userModel;
 
 export const getUser = async (id: string): Promise<IUser> => {
     const findResult = await userModel.findOne({id})
-
     const userEntry = findResult ? findResult : await insertUser(id)
-
-    return {id: userEntry.id, points: userEntry.points, activeStartDate: userEntry.activeStartDate}
+    return {
+        id: userEntry.id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown
+    }
 }
 
-export const updateUser = async (id: string, points?: number, activeStartDate?: Date | null): Promise<IUser> => {
-    const updateResult = await userModel.findOneAndUpdate(
-        {id},
-        {$set: {
-            ...(points !== undefined && {points}),
-            ...(activeStartDate !== undefined && {activeStartDate})
-        }},
-        {new: true}
-    )
-    const userEntry = updateResult ? updateResult : await insertUser(id, points, activeStartDate)
-
-    return {id, points: userEntry.points, activeStartDate: userEntry.activeStartDate}
+export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
+    const updateResult = await userModel.findOneAndUpdate({id}, {$set: {...(updates)}}, {new: true})
+    const userEntry = updateResult ? updateResult : await insertUser(id, updates)
+    return {
+        id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown
+    }
 }
 
-const insertUser = async (id: string, points?: number, activeDate?: Date | null): Promise<IUser> => {
-    const user = await new userModel({
-        id,
-        points: points ? points : process.env.DEFAULT_POINTS,
-        activeDate: activeDate ? activeDate : null,
-    }).save()
-
-    return {id: user.id, points: user.points, activeStartDate: user.activeStartDate}
+const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> => {
+    const userEntry = await new userModel({id, ...(updates !== undefined ? updates : {})}).save()
+    return {
+        id: userEntry.id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown
+    }
 }

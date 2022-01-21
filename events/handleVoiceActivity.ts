@@ -18,7 +18,7 @@ const handleVoiceActivity = async (oldState: VoiceState, newState: VoiceState) =
     if (isActive(newState, guildInfo)) {
         const user = await getUser(newState.id)
         if (!user.activeStartDate) {
-            updateUser(newState.id, undefined, new Date())
+            updateUser(newState.id, {activeStartDate: new Date()})
         }
     } else if (!isActive(newState, guildInfo)) {
         disableUserActivityAndAccruePoints(newState.id)

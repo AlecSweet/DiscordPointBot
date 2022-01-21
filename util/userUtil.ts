@@ -13,14 +13,14 @@ const accruePoints = async (user: IUser, disableActivity: boolean, addPoints?: n
         const minutesActive = Math.floor(timeDifference / 60000)
         user = await updateUser(
             user.id, 
-            user.points + minutesActive + addPoints, 
-            disableActivity ? null : newActiveStartDate
+            {
+                points: user.points + minutesActive + addPoints, 
+                activeStartDate: disableActivity ? null : newActiveStartDate,
+                secondsActive: user.secondsActive + (minutesActive * 60)
+            }
         )
     } else if (!user.activeStartDate && addPoints) {
-        user = await updateUser(
-            user.id, 
-            user.points + addPoints
-        )
+        user = await updateUser(user.id, {points: user.points + addPoints})
     }
 
     return user
@@ -38,6 +38,16 @@ export const disableUserActivityAndAccruePoints = async (id: string): Promise<IU
 const getUserAndAccruePoints = async (id: string): Promise<IUser> => {
     const user = await getUser(id)
     return await accruePoints(user, false)
+}
+
+export const checkAndTriggerUserCooldown = async (id: string): Promise<number> => {
+    const user = await getUser(id)
+    const currentDate = new Date()
+    if (!user.cooldown || currentDate.getTime() - user.cooldown.getTime() > 10000) {
+        updateUser(id, {cooldown: currentDate})
+        return -1
+    }
+    return 10000 - (currentDate.getTime() - user.cooldown.getTime())
 }
 
 export default getUserAndAccruePoints

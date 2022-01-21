@@ -3,8 +3,10 @@ import WOKCommands from "wokcommands";
 import path from "path";
 import handleVoiceActivity from "./events/handleVoiceActivity";
 import * as dotenv from "dotenv"
-import { updateCurrentGuildInfo } from "./db/guildInfo";
+import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
 dotenv.config()
+
+process.on('uncaughtException', (err) => {console.log(err)})
 
 const client = new Client({ 
     intents: [
@@ -42,5 +44,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     await handleVoiceActivity(oldState, newState)
 })
 
+client.on('channelCreate', async (channel) => {
+    if (channel.type === 'GUILD_VOICE' && channel.guild.afkChannelId !== channel.id) {
+        const guildInfo = await getCurrentGuildInfo()
+        guildInfo.activeChannelIds.push(channel.id)
+        updateCurrentGuildInfo(guildInfo.activeChannelIds, guildInfo.afkChannelId)
+    }
+})
 
 client.login(process.env.TOKEN)

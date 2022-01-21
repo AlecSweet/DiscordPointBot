@@ -1,4 +1,5 @@
 import { updateUser } from "../db/user";
+import isValidUserArg from "../util/isValidUserArg";
 import { ICallback, ICommand } from "../wokTypes";
 
 const setPoints: ICommand = {
@@ -9,9 +10,10 @@ const setPoints: ICommand = {
     minArgs: 2,
     maxArgs: 2,
     ownerOnly: true,
+    cooldown: '23h',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
-        const { message, args } = options
+        const { message, args, guild } = options
 
         const points = Number(args[1])
         if (isNaN(points)) {
@@ -19,7 +21,14 @@ const setPoints: ICommand = {
             return
         }
 
-        const user = await updateUser(args[0].replace(/\D/g,''), points)
+        const id = args[0].replace(/\D/g,'')
+
+        if (!(await isValidUserArg(id, guild))) {
+            message.reply({content: `Dont know user ${args[0]} ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
+        const user = await updateUser(id, {points})
 
         message.reply({content: `${args[0]} points set to ${user.points}`})
     }
