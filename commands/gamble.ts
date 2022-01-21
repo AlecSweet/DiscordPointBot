@@ -11,7 +11,7 @@ const myPoints: ICommand = {
     expectedArgs: '<# of points to lose>',
     minArgs: 1,
     maxArgs: 1,
-    cooldown: '20s',
+    cooldown: '5s',
     callback: async (options: ICallback) => {
         const { message, args } = options
 

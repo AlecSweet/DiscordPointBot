@@ -10,7 +10,6 @@ const setPoints: ICommand = {
     minArgs: 2,
     maxArgs: 2,
     ownerOnly: true,
-    cooldown: '23h',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
         const { message, args, guild } = options

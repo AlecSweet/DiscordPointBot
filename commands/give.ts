@@ -10,7 +10,7 @@ const give: ICommand = {
     expectedArgs: '<users @> <number>',
     minArgs: 2,
     maxArgs: 2,
-    cooldown: '30s',
+    cooldown: '5s',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
