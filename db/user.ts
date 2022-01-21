@@ -45,7 +45,7 @@ export const updateUser = async (id: string, points?: number, activeStartDate?: 
         {new: true}
     )
     const userEntry = updateResult ? updateResult : await insertUser(id, points, activeStartDate)
-    
+
     return {id, points: userEntry.points, activeStartDate: userEntry.activeStartDate}
 }
 

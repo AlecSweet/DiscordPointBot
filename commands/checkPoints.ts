@@ -6,13 +6,18 @@ const points: ICommand = {
     category: 'pointCheck',
     description: 'Check points',
     expectedArgs: '<users @>',
-    minArgs: 1,
+    minArgs: 0,
     maxArgs: 1,
     callback: async (options: ICallback) => {
         const { message, args } = options
 
-        const user = await getUserAndAccruePoints(args[0].replace(/\D/g,''))
+        if (!args[0]) {
+            const self = await getUserAndAccruePoints(message.author.id)
+            message.reply({content: `You have ${self.points} points`})
+            return
+        }
 
+        const user = await getUserAndAccruePoints(args[0].replace(/\D/g,''))
         message.reply({content: `${args[0]} has ${user.points} points`})
     }
 }

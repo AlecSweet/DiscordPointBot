@@ -1,17 +1,26 @@
 import { VoiceState } from "discord.js"
-import { updateUser } from "../db/user"
+import { getUser, updateUser } from "../db/user"
 import * as dotenv from "dotenv"
 import { disableUserActivityAndAccruePoints } from "../util/userUtil"
+import { getCurrentGuildInfo, ICurrentGuildInfo } from "../db/guildInfo"
 dotenv.config()
 
-const isActive = (newState: VoiceState): boolean => {
-    return !newState.deaf && !newState.serverMute && newState.guild.id === process.env.GUILD_ID
+const isActive = (newState: VoiceState, guildInfo: ICurrentGuildInfo): boolean => {
+    return !newState.deaf && 
+        !newState.serverMute && 
+        !!newState.channel && 
+        guildInfo.activeChannelIds.indexOf(newState.channel.id) > -1
 }
 
 const handleVoiceActivity = async (oldState: VoiceState, newState: VoiceState) => {
-    if (!isActive(oldState) && isActive(newState)) {
-        updateUser(newState.id, undefined, new Date())
-    } else if (!isActive(newState) && isActive(oldState)) {
+    const guildInfo = await getCurrentGuildInfo()
+
+    if (isActive(newState, guildInfo)) {
+        const user = await getUser(newState.id)
+        if (!user.activeStartDate) {
+            updateUser(newState.id, undefined, new Date())
+        }
+    } else if (!isActive(newState, guildInfo)) {
         disableUserActivityAndAccruePoints(newState.id)
     }
 }

@@ -3,6 +3,7 @@ import WOKCommands from "wokcommands";
 import path from "path";
 import handleVoiceActivity from "./events/handleVoiceActivity";
 import * as dotenv from "dotenv"
+import { updateCurrentGuildInfo } from "./db/guildInfo";
 dotenv.config()
 
 const client = new Client({ 
@@ -17,14 +18,23 @@ const client = new Client({
         ] 
 })
 
-client.on('ready', () => {
+client.on('ready', async () => {
     console.log(`Logged in as ${client.user?.tag}!`);
-    //console.log(client.guilds.cache)
+    client.guilds.fetch(`${process.env.GUILD_ID}`)
+        .then((guild) => {
+            const activeChannelIds = guild.channels.cache.filter(channel => {
+                    return channel.type === 'GUILD_VOICE' && channel.id !== channel.guild.afkChannelId
+                }).map(channel => {
+                    return channel.id
+                })
+            const afkChannelId = guild.afkChannelId ? guild.afkChannelId : ''
+            updateCurrentGuildInfo(activeChannelIds, afkChannelId)
+        })
     new WOKCommands(client, {
         commandsDir: path.join(__dirname, 'commands'),
         typeScript: true,
         mongoUri: process.env.MONGO_URI,
-        botOwners: '146034047112577025'
+        botOwners: `${process.env.BOT_OWNER}`
     })
 })
 

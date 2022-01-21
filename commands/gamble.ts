@@ -10,12 +10,12 @@ const myPoints: ICommand = {
     expectedArgs: '<# of points to lose>',
     minArgs: 1,
     maxArgs: 1,
-    cooldown: '6s',
+    cooldown: '5s',
     callback: async (options: ICallback) => {
         const { message, args } = options
 
         const user = await getUserAndAccruePoints(message.author.id)
-        
+
         const points = args[0].toUpperCase() === 'ALL' ? user.points : Number(args[0])
         if (isNaN(points) || !Number.isInteger(points) || points < 1) {
             message.reply({content: `${points === 0 ? 0 : args[0]} ain a valid bet ${process.env.NOPPERS_EMOJI}`})
