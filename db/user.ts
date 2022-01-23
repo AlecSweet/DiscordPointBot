@@ -12,6 +12,13 @@ export interface IUser {
     pointsLost: number
     secondsActive: number
     cooldown: Date
+    flipStreak: number
+    maxWinStreak: number
+    maxLossStreak: number
+    dailyClaim: Date
+    weeklyClaim: Date
+    pointsGiven: number
+    pointsRecieved: number
 }
 
 export interface IUserUpdates {
@@ -23,6 +30,13 @@ export interface IUserUpdates {
     pointsLost?: number
     secondsActive?: number
     cooldown?: Date
+    flipStreak?: number
+    maxWinStreak?: number
+    maxLossStreak?: number
+    dailyClaim?: Date
+    weeklyClaim?: Date
+    pointsGiven?: number
+    pointsRecieved?: number
 }
 
 const userSchema = new Schema({
@@ -61,8 +75,37 @@ const userSchema = new Schema({
     cooldown: {
         type: Date,
         default: new Date()
-    }
-});
+    },
+    flipStreak: {
+        type: Number,
+        default: 0
+    },
+    maxWinStreak: {
+        type: Number,
+        default: 0
+    },
+    maxLossStreak: {
+        type: Number,
+        default: 0
+    },
+    dailyClaim: {
+        type: Date,
+        default: new Date()
+    },
+    weeklyClaim: {
+        type: Date,
+        default: new Date()
+    },
+    pointsGiven: {
+        type: Number,
+        default: 0
+    },
+    pointsRecieved: {
+        type: Number,
+        default: 0
+    },
+
+})
 
 const userModel = model['user'] || model('user', userSchema);
 
@@ -80,7 +123,14 @@ export const getUser = async (id: string): Promise<IUser> => {
         pointsWon: userEntry.pointsWon,
         pointsLost: userEntry.pointsLost,
         secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved
     }
 }
 
@@ -96,7 +146,14 @@ export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUs
         pointsWon: userEntry.pointsWon,
         pointsLost: userEntry.pointsLost,
         secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved
     }
 }
 
@@ -111,6 +168,13 @@ const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> =>
         pointsWon: userEntry.pointsWon,
         pointsLost: userEntry.pointsLost,
         secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved
     }
 }

@@ -43,11 +43,11 @@ const getUserAndAccruePoints = async (id: string): Promise<IUser> => {
 export const checkAndTriggerUserCooldown = async (id: string): Promise<number> => {
     const user = await getUser(id)
     const currentDate = new Date()
-    if (!user.cooldown || currentDate.getTime() - user.cooldown.getTime() > 5000) {
+    if (!user.cooldown || currentDate.getTime() - user.cooldown.getTime() > 3000) {
         updateUser(id, {cooldown: currentDate})
         return -1
     }
-    return 5000 - (currentDate.getTime() - user.cooldown.getTime())
+    return 3000 - (currentDate.getTime() - user.cooldown.getTime())
 }
 
 export default getUserAndAccruePoints

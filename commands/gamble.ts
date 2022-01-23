@@ -11,7 +11,7 @@ const myPoints: ICommand = {
     expectedArgs: '<# of points to lose>',
     minArgs: 1,
     maxArgs: 1,
-    cooldown: '5s',
+    cooldown: '3s',
     callback: async (options: ICallback) => {
         const { message, args } = options
 
@@ -34,24 +34,62 @@ const myPoints: ICommand = {
             return
         }
 
+        const won = Math.random() < .5
+        if (won) {
+            await addPoints(user, points)
+
+            let newMaxLossStreak = {}
+            let flipStreak = user.flipStreak
+            if (flipStreak < 0) {  
+                if (Math.abs(flipStreak) > user.maxLossStreak) {
+                    newMaxLossStreak = {maxLossStreak: Math.abs(flipStreak)}
+                }
+                flipStreak = 0
+            }
+
+            user = await updateUser(
+                user.id, 
+                {
+                    pointsWon: user.pointsWon + points, 
+                    flipsWon: user.flipsWon + 1, 
+                    ...(newMaxLossStreak), 
+                    flipStreak: flipStreak + 1
+                }
+            )
+        } else {
+            await addPoints(user, -points)
+
+            let newMaxWinStreak = {}
+            let flipStreak = user.flipStreak
+            if (flipStreak > 0) {  
+                if (flipStreak > user.maxWinStreak) {
+                    newMaxWinStreak = {maxWinStreak: flipStreak}
+                }
+                flipStreak = 0
+            }
+            user = await updateUser(
+                user.id, 
+                {
+                    pointsLost: user.pointsLost + points, 
+                    flipsLost: user.flipsLost + 1, 
+                    ...(newMaxWinStreak), 
+                    flipStreak: flipStreak - 1
+                }
+            )
+        }
+
         await Promise.all([
             [message.react('3️⃣'), message.react('2️⃣'), message.react('1️⃣')],
             await new Promise(resolve => setTimeout(resolve, 400))
         ]);
 
-        user = await getUserAndAccruePoints(message.author.id)
-        if (Math.random() < .5) {
-            await addPoints(user, points)
-            const newUser = await updateUser(user.id, {pointsWon: user.pointsWon + points, flipsWon: user.flipsWon + 1})
+        if (won) {
             await message.react('✅')
-            message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${newUser.points} points now.`})
+            message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now.`})
         } else {
-            await addPoints(user, -points)
-            const newUser = await updateUser(user.id, {pointsLost: user.pointsLost + points, flipsLost: user.flipsLost + 1})
             await message.react('❌')
-            message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${newUser.points} points.`})
+            message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points.`})
         }
-       
     }
 }
 

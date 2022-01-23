@@ -1,3 +1,4 @@
+import { updateUser } from "../db/user";
 import isValidNumberArg from "../util/isValidNumberArg";
 import isValidUserArg from "../util/isValidUserArg";
 import getUserAndAccruePoints, { addPoints, checkAndTriggerUserCooldown } from "../util/userUtil";
@@ -17,7 +18,7 @@ const give: ICommand = {
 
         const gifteeId = args[0].replace(/\D/g,'')
         if (gifteeId === message.author.id) {
-            message.reply({content: `so kind... ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: `Yourself? So kind... ${process.env.NOPPERS_EMOJI}`})
             return
         }
 
@@ -54,6 +55,9 @@ const give: ICommand = {
 
         const giftee = await addPoints(await getUserAndAccruePoints(gifteeId), points)
         const author = await addPoints(await getUserAndAccruePoints(message.author.id), -points)
+
+        await updateUser(giftee.id, {pointsRecieved: giftee.pointsRecieved + points})
+        await updateUser(author.id, {pointsGiven: author.pointsGiven + points})
 
         message.reply({content: `You gave <@${giftee.id}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
     }

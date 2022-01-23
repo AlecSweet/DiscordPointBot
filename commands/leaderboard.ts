@@ -6,14 +6,19 @@ enum LeaderboardTypes {
     points = 'points',
     flipslost = 'flipsLost',
     flipswon = 'flipsWon',
+    pointsflipped = 'pointsFlipped',
     pointswon = 'pointsWon',
     pointslost = 'pointsLost',
     active = 'secondsActive',
     flips = 'flips',
-    unluckiestflipper = 'unluckiestFlipper',
-    luckiestflipper = 'luckiestFlipper',
+    unluckiest = 'unluckiestFlipper',
+    luckiest = 'luckiestFlipper',
     worstflipper = 'worstFlipper',
-    bestflipper = 'bestFlipper'
+    bestflipper = 'bestFlipper',
+    given = 'pointsGiven',
+    recieved = 'pointsRecieved',
+    winstreak = 'maxWinStreak',
+    lossstreak = 'maxLossStreak'
 }
 
 enum LeaderboardTitles {
@@ -21,13 +26,18 @@ enum LeaderboardTitles {
     flips = 'Total Flips Top',
     flipsLost = 'Flips Lost Top',
     flipsWon = 'Flips Won Top',
-    pointsWon = 'Flip Points Won Top',
-    pointsLost = 'Flip Points Lost Top',
+    pointsWon = 'Points Won to Flips Top',
+    pointsLost = 'Points Lost to Flips Top',
     secondsActive = 'Time Active Top',
     unluckiestFlipper = '(*Min 5 Flips*) Flip Win Rate Bottom',
     luckiestFlipper = '(*Min 5 Flips*) Flip Win Rate Top',
     worstFlipper = '(*Min 3W and 3L*) Avg PointsPerWin / Avg PointsPerLoss Bottom',
     bestFlipper = '(*Min 3W and 3L*) Avg PointsPerWin / Avg PointsPerLoss Top',
+    pointsFlipped = 'Total Points Bet on Flips Top',
+    pointsGiven = 'Points Given Top',
+    pointsRecieved = 'Points Recieved Top',
+    maxWinStreak = 'Max Win Streak Top',
+    maxLossStreak = 'Max Loss Streak Top',
 }
 
 
@@ -42,36 +52,44 @@ const leaderboardAggregates = {
     //worstFlipper: 0,
     luckiestFlipper: [
         {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
-        {$match: { flips: {$gt: 5}}},
+        {$match: { flips: {$gt: 4}}},
         {$addFields: { luckiestFlipper: { $divide: [ "$flipsWon", "$flips"]}}},
         //{$addFields: { luckiestFlipper: { $cond: [{ $eq: [ "$flipsLost", 0 ] }, "$flipsWon", { $divide: [ "$flipsWon", "$flipsLost"]}] }}},
         {$sort: {luckiestFlipper:-1}},
     ],
     unluckiestFlipper: [
         {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
-        {$match: { flips: {$gt: 5}}},
+        {$match: { flips: {$gt: 4}}},
         {$addFields: { unluckiestFlipper: { $divide: [ "$flipsWon", "$flips"]}}},
         {$sort: {unluckiestFlipper:1}},
     ],
     bestFlipper: [
-        {$match: { flipsLost: {$gt: 3}}},
-        {$match: { flipsWon: {$gt: 3}}},
+        {$match: { flipsLost: {$gt: 2}}},
+        {$match: { flipsWon: {$gt: 2}}},
         {$addFields: { avgPPW: { $divide: [ "$pointsWon", "$flipsWon"]}}},
         {$addFields: { avgPPL: { $divide: [ "$pointsLost", "$flipsLost"]}}},
         {$addFields: { ratio: { $divide: [ "$avgPPW", "$avgPPL"]}}},
         {$sort: {ratio:-1}},
     ],
     worstFlipper: [
-        {$match: { flipsLost: {$gt: 3}}},
-        {$match: { flipsWon: {$gt: 3}}},
+        {$match: { flipsLost: {$gt: 2}}},
+        {$match: { flipsWon: {$gt: 2}}},
         {$addFields: { avgPPW: { $divide: [ "$pointsWon", "$flipsWon"]}}},
         {$addFields: { avgPPL: { $divide: [ "$pointsLost", "$flipsLost"]}}},
         {$addFields: { ratio: { $divide: [ "$avgPPW", "$avgPPL"]}}},
         {$sort: {ratio:1}},
     ],
-    pointsWon: [{$sort:{pointsWon:-1}},],
-    pointsLost: [{$sort:{pointsLost:-1}},],
-    secondsActive: [{$sort:{secondsActive:-1}},],
+    pointsFlipped: [
+        {$addFields: { pointsFlipped: { $add: [ "$pointsWon", "$pointsLost"]}}},
+        {$sort: {pointsFlipped:-1}},
+    ],
+    pointsWon: [{$sort:{pointsWon:-1}}],
+    pointsLost: [{$sort:{pointsLost:-1}}],
+    secondsActive: [{$sort:{secondsActive:-1}}],
+    pointsGiven: [{$match: { pointsGiven: {$gt: 0}}}, {$sort:{pointsGiven:-1}}],
+    pointsRecieved: [{$match: { pointsRecieved: {$gt: 0}}}, {$sort:{pointsRecieved:-1}}],
+    maxWinStreak: [{$match: { maxWinStreak: {$gt: 0}}}, {$sort:{maxWinStreak:-1}}],
+    maxLossStreak: [{$match: { maxLossStreak: {$gt: 0}}}, {$sort:{maxLossStreak:-1}}]
 }
 
 const leaderboard: ICommand = {
@@ -138,7 +156,7 @@ export default leaderboard
 
 const getValueByLeaderBoardType = (user, type: string): string => {
     if (type === 'worstFlipper' || type === 'bestFlipper') {
-        return `PpW ${(Math.round(user.avgPPW * 10) / 10).toFixed(1)}/ PpL${(Math.round(user.avgPPL * 10) / 10).toFixed(1)}`
+        return `Avg Win: ${(Math.round(user.avgPPW * 10) / 10).toFixed(1)} / Avg Loss: ${(Math.round(user.avgPPL * 10) / 10).toFixed(1)}`
     }
 
     if (type === 'secondsActive') {

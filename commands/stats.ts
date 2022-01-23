@@ -35,12 +35,21 @@ const points: ICommand = {
         const secLeftAfterHours = secLeftAfterDays % 3600
         const minutes = Math.floor(secLeftAfterHours / 60)
 
+        const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
+        const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
+        const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
+
         message.reply({content: 
 `**<@${user.id}>'s Stats**
-\`\`\`Points:   ${user.points}
-Flips:    ${user.flipsWon}W / ${user.flipsLost}L
-Returns:  Won: ${user.pointsWon} / Lost: ${user.pointsLost}
-Active:   ${days}d / ${hours}h / ${minutes}m\`\`\``
+\`\`\`
+Points:         ${user.points}
+Flips:          ${user.flipsWon}W / ${user.flipsLost}L
+Flip Returns:   Won: ${user.pointsWon} / Lost: ${user.pointsLost}
+Avg Flips:      Avg Bet: ${pPF} / Avg Win: ${pPW} / Avg Loss: ${pPL}
+Flip Streaks:   Max Loss: ${user.maxLossStreak} / Max Win: ${user.maxWinStreak}
+Current Streak: ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
+Point Gifts:    ${user.pointsGiven} Given / ${user.pointsRecieved} Recieved           
+Active:         ${days}d / ${hours}h / ${minutes}m\`\`\``
         })
     }
 }
