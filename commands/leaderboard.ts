@@ -4,30 +4,71 @@ import { ICallback, ICommand } from "../wokTypes";
 
 enum LeaderboardTypes {
     points = 'points',
-    flipsLost = 'flipsLost',
-    flipsWon = 'flipsWon',
-    pointsWon = 'pointsWon',
-    pointsLost = 'pointsLost',
+    flipslost = 'flipsLost',
+    flipswon = 'flipsWon',
+    pointswon = 'pointsWon',
+    pointslost = 'pointsLost',
     active = 'secondsActive',
+    flips = 'flips',
+    unluckiestflipper = 'unluckiestFlipper',
+    luckiestflipper = 'luckiestFlipper',
+    worstflipper = 'worstFlipper',
+    bestflipper = 'bestFlipper'
 }
 
 enum LeaderboardTitles {
-    points = 'Points',
-    flipsLost = 'Flips Lost',
-    flipsWon = 'Flips Won',
-    pointsWon = 'Flip Points Won',
-    pointsLost = 'Flip Points Lost',
-    secondsActive = 'Time Active',
+    points = 'Points Top',
+    flips = 'Total Flips Top',
+    flipsLost = 'Flips Lost Top',
+    flipsWon = 'Flips Won Top',
+    pointsWon = 'Flip Points Won Top',
+    pointsLost = 'Flip Points Lost Top',
+    secondsActive = 'Time Active Top',
+    unluckiestFlipper = '(*Min 5 Flips*) Flip Win Rate Bottom',
+    luckiestFlipper = '(*Min 5 Flips*) Flip Win Rate Top',
+    worstFlipper = '(*Min 3W and 3L*) Avg PointsPerWin / Avg PointsPerLoss Bottom',
+    bestFlipper = '(*Min 3W and 3L*) Avg PointsPerWin / Avg PointsPerLoss Top',
 }
 
 
 const leaderboardAggregates = {
     points: [{$sort:{points:-1}}],
-    //flips: 0,
+    flips: [
+        {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
+        {$sort: {flips:-1}},
+    ],
     flipsLost: [{$sort:{flipsLost:-1}}],
     flipsWon: [{$sort:{flipsLost:-1}}],
     //worstFlipper: 0,
-    //unluckiestFlipper: 0,
+    luckiestFlipper: [
+        {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
+        {$match: { flips: {$gt: 5}}},
+        {$addFields: { luckiestFlipper: { $divide: [ "$flipsWon", "$flips"]}}},
+        //{$addFields: { luckiestFlipper: { $cond: [{ $eq: [ "$flipsLost", 0 ] }, "$flipsWon", { $divide: [ "$flipsWon", "$flipsLost"]}] }}},
+        {$sort: {luckiestFlipper:-1}},
+    ],
+    unluckiestFlipper: [
+        {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
+        {$match: { flips: {$gt: 5}}},
+        {$addFields: { unluckiestFlipper: { $divide: [ "$flipsWon", "$flips"]}}},
+        {$sort: {unluckiestFlipper:1}},
+    ],
+    bestFlipper: [
+        {$match: { flipsLost: {$gt: 3}}},
+        {$match: { flipsWon: {$gt: 3}}},
+        {$addFields: { avgPPW: { $divide: [ "$pointsWon", "$flipsWon"]}}},
+        {$addFields: { avgPPL: { $divide: [ "$pointsLost", "$flipsLost"]}}},
+        {$addFields: { ratio: { $divide: [ "$avgPPW", "$avgPPL"]}}},
+        {$sort: {ratio:-1}},
+    ],
+    worstFlipper: [
+        {$match: { flipsLost: {$gt: 3}}},
+        {$match: { flipsWon: {$gt: 3}}},
+        {$addFields: { avgPPW: { $divide: [ "$pointsWon", "$flipsWon"]}}},
+        {$addFields: { avgPPL: { $divide: [ "$pointsLost", "$flipsLost"]}}},
+        {$addFields: { ratio: { $divide: [ "$avgPPW", "$avgPPL"]}}},
+        {$sort: {ratio:1}},
+    ],
     pointsWon: [{$sort:{pointsWon:-1}},],
     pointsLost: [{$sort:{pointsLost:-1}},],
     secondsActive: [{$sort:{secondsActive:-1}},],
@@ -40,19 +81,18 @@ const leaderboard: ICommand = {
     expectedArgs: '<leaderboard type> <Optional # of users (1-20)>',
     minArgs: 0,
     maxArgs: 2,
-    cooldown: '20s',
-    ownerOnly: true,
+    cooldown: '6s',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
         const { message, args, guild} = options
 
-        let leaderboardType = args[0]
+        let leaderboardType = args[0] ? args[0].toLowerCase() : args[0]
         if (!leaderboardType || !LeaderboardTypes[leaderboardType]) {
             const validTypes: string[] = []
             for (const e in LeaderboardTypes) {
                 validTypes.push(e)
             }
-            message.reply({content: `Use !top <leaderboard type> <Optional # of users[1-20]>\nLeadboard Types: ${validTypes.join(', ')}`})
+            message.reply({content: `Use !top <leaderboard type> <optional # of users[1-20]>\nLeadboard Types: \n\`\`\`${validTypes.join(', ')}\`\`\``})
             return
         }
         leaderboardType = LeaderboardTypes[leaderboardType]
@@ -89,7 +129,7 @@ const leaderboard: ICommand = {
         })
 
         message.reply({
-            content: `**${LeaderboardTitles[leaderboardType]} Top ${numTop}**\n\`\`\`${formatedResults.join('')}\`\`\`${leaderboardType === 'points' || leaderboardType === 'secondsActive' ? `${process.env.SHRUGGERS_EMOJI}*ᴹᶦᵍʰᵗ ᵇᵉ ᵃ ᵇᶦᵗ ᵇᵉʰᶦⁿᵈ`: ''}`
+            content: `**${LeaderboardTitles[leaderboardType]} ${numTop}**\n\`\`\`${formatedResults.join('')}\`\`\`${leaderboardType === 'points' || leaderboardType === 'secondsActive' ? `${process.env.SHRUGGERS_EMOJI}*ᴹᶦᵍʰᵗ ᵇᵉ ᵃ ᵇᶦᵗ ᵇᵉʰᶦⁿᵈ`: ''}`
         })
     }
 }
@@ -97,6 +137,10 @@ const leaderboard: ICommand = {
 export default leaderboard
 
 const getValueByLeaderBoardType = (user, type: string): string => {
+    if (type === 'worstFlipper' || type === 'bestFlipper') {
+        return `PpW ${(Math.round(user.avgPPW * 10) / 10).toFixed(1)}/ PpL${(Math.round(user.avgPPL * 10) / 10).toFixed(1)}`
+    }
+
     if (type === 'secondsActive') {
         const days = Math.floor(user.secondsActive / 86400)
         const secLeftAfterDays = user.secondsActive % 86400
@@ -105,5 +149,15 @@ const getValueByLeaderBoardType = (user, type: string): string => {
         const minutes = Math.floor(secLeftAfterHours / 60)
         return `${days}d / ${hours}h / ${minutes}m`
     }
+    
+    const numCheck = Number(user[type])
+    if (!isNaN(numCheck) && !Number.isInteger(user[type])) {
+        if (type === 'unluckiestFlipper' || type === 'luckiestFlipper') {
+            return `${(Math.round(numCheck * 10000) / 100).toFixed(2)}%`
+        }
+
+        return (Math.round(numCheck * 10000) / 10000).toFixed(4);
+    }
+   
     return user[type]
 }

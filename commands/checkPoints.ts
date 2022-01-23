@@ -9,7 +9,7 @@ const points: ICommand = {
     expectedArgs: '<users @>',
     minArgs: 0,
     maxArgs: 1,
-    cooldown: '5s',
+    cooldown: '3s',
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
 
