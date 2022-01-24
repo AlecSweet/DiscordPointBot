@@ -18,7 +18,8 @@ enum LeaderboardTypes {
     given = 'pointsGiven',
     recieved = 'pointsRecieved',
     winstreak = 'maxWinStreak',
-    lossstreak = 'maxLossStreak'
+    lossstreak = 'maxLossStreak',
+    highroller = 'highRoller'
 }
 
 enum LeaderboardTitles {
@@ -38,6 +39,7 @@ enum LeaderboardTitles {
     pointsRecieved = 'Points Recieved Top',
     maxWinStreak = 'Max Win Streak Top',
     maxLossStreak = 'Max Loss Streak Top',
+    highRoller = 'Flip Average Bet'
 }
 
 
@@ -89,7 +91,14 @@ const leaderboardAggregates = {
     pointsGiven: [{$match: { pointsGiven: {$gt: 0}}}, {$sort:{pointsGiven:-1}}],
     pointsRecieved: [{$match: { pointsRecieved: {$gt: 0}}}, {$sort:{pointsRecieved:-1}}],
     maxWinStreak: [{$match: { maxWinStreak: {$gt: 0}}}, {$sort:{maxWinStreak:-1}}],
-    maxLossStreak: [{$match: { maxLossStreak: {$gt: 0}}}, {$sort:{maxLossStreak:-1}}]
+    maxLossStreak: [{$match: { maxLossStreak: {$gt: 0}}}, {$sort:{maxLossStreak:-1}}],
+    highRoller: [
+        {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
+        {$match: { flips: {$gt: 9}}},
+        {$addFields: { totalPoints: { $add: [ "$pointsWon", "$pointsLost"]}}},
+        {$addFields: { avgPPB: { $divide: [ "$totalPoints", "$flips"]}}},
+        {$sort: {avgPPB:-1}},
+    ],
 }
 
 const leaderboard: ICommand = {
@@ -147,7 +156,8 @@ const leaderboard: ICommand = {
         })
 
         message.reply({
-            content: `**${LeaderboardTitles[leaderboardType]} ${numTop}**\n\`\`\`${formatedResults.join('')}\`\`\`${leaderboardType === 'points' || leaderboardType === 'secondsActive' ? `${process.env.SHRUGGERS_EMOJI}*ᴹᶦᵍʰᵗ ᵇᵉ ᵃ ᵇᶦᵗ ᵇᵉʰᶦⁿᵈ`: ''}`
+            content: `**${LeaderboardTitles[leaderboardType]} ${numTop}**\n\`\`\`
+${formatedResults.join('')}\`\`\`${leaderboardType === 'points' || leaderboardType === 'secondsActive' ? `${process.env.SHRUGGERS_EMOJI}*ᴹᶦᵍʰᵗ ᵇᵉ ᵃ ᵇᶦᵗ ᵇᵉʰᶦⁿᵈ`: ''}`
         })
     }
 }
@@ -157,6 +167,10 @@ export default leaderboard
 const getValueByLeaderBoardType = (user, type: string): string => {
     if (type === 'worstFlipper' || type === 'bestFlipper') {
         return `Avg Win: ${(Math.round(user.avgPPW * 10) / 10).toFixed(1)} / Avg Loss: ${(Math.round(user.avgPPL * 10) / 10).toFixed(1)}`
+    }
+
+    if (type === 'highRoller') {
+        return `Avg Bet: ${(Math.round(user.avgPPB * 10) / 10).toFixed(1)}`
     }
 
     if (type === 'secondsActive') {

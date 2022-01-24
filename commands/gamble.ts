@@ -34,17 +34,20 @@ const myPoints: ICommand = {
             return
         }
 
-        const won = Math.random() < .5
+        const roll = Math.random()
+        const won = !(roll < .5)
         if (won) {
             await addPoints(user, points)
 
-            let newMaxLossStreak = {}
+            let newMaxStreak = {}
             let flipStreak = user.flipStreak
             if (flipStreak < 0) {  
                 if (Math.abs(flipStreak) > user.maxLossStreak) {
-                    newMaxLossStreak = {maxLossStreak: Math.abs(flipStreak)}
+                    newMaxStreak = {maxLossStreak: Math.abs(flipStreak)}
                 }
                 flipStreak = 0
+            } else if (flipStreak + 1 > user.maxWinStreak) {
+                newMaxStreak = {maxWinStreak: flipStreak + 1}
             }
 
             user = await updateUser(
@@ -52,44 +55,55 @@ const myPoints: ICommand = {
                 {
                     pointsWon: user.pointsWon + points, 
                     flipsWon: user.flipsWon + 1, 
-                    ...(newMaxLossStreak), 
+                    ...(newMaxStreak), 
                     flipStreak: flipStreak + 1
                 }
             )
         } else {
             await addPoints(user, -points)
 
-            let newMaxWinStreak = {}
+            let newMaxStreak = {}
             let flipStreak = user.flipStreak
             if (flipStreak > 0) {  
                 if (flipStreak > user.maxWinStreak) {
-                    newMaxWinStreak = {maxWinStreak: flipStreak}
+                    newMaxStreak = {maxWinStreak: flipStreak}
                 }
                 flipStreak = 0
+            } else if (Math.abs(flipStreak - 1) > user.maxLossStreak) {
+                newMaxStreak = {maxLossStreak: Math.abs(flipStreak - 1)}
             }
             user = await updateUser(
                 user.id, 
                 {
                     pointsLost: user.pointsLost + points, 
                     flipsLost: user.flipsLost + 1, 
-                    ...(newMaxWinStreak), 
+                    ...(newMaxStreak), 
                     flipStreak: flipStreak - 1
                 }
             )
         }
 
-        await Promise.all([
-            [message.react('3️⃣'), message.react('2️⃣'), message.react('1️⃣')],
+            // This jazz is necessary to translate from a random integer to a floating point from 0 to 1
+            //return arr[0]/(0xffffffff + 1);
+        //const  arr = new Uint32Array(1);
+        //crypto.getRandomValues(arr);
+        
+       // console.log(arr ? arr : 'fucked')
+        const rollFormatted = Math.ceil(((roll) * 100))
+        Promise.all([
+            [
+                message.react('3️⃣'), 
+                message.react('2️⃣'), 
+                message.react('1️⃣'),
+                [
+                    won ? await message.react('✅') : await message.react('❌'),
+                    won ? 
+                        message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled a ${rollFormatted}`}) :
+                        message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled a ${rollFormatted}`})
+                ]
+            ],
             await new Promise(resolve => setTimeout(resolve, 400))
         ]);
-
-        if (won) {
-            await message.react('✅')
-            message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now.`})
-        } else {
-            await message.react('❌')
-            message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points.`})
-        }
     }
 }
 

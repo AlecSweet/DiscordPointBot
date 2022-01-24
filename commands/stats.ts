@@ -41,15 +41,15 @@ const points: ICommand = {
 
         message.reply({content: 
 `**<@${user.id}>'s Stats**
-\`\`\`
-Points:         ${user.points}
-Flips:          ${user.flipsWon}W / ${user.flipsLost}L
-Flip Returns:   Won: ${user.pointsWon} / Lost: ${user.pointsLost}
-Avg Flips:      Avg Bet: ${pPF} / Avg Win: ${pPW} / Avg Loss: ${pPL}
-Flip Streaks:   Max Loss: ${user.maxLossStreak} / Max Win: ${user.maxWinStreak}
-Current Streak: ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
-Point Gifts:    ${user.pointsGiven} Given / ${user.pointsRecieved} Recieved           
-Active:         ${days}d / ${hours}h / ${minutes}m\`\`\``
+\`\`\`Ruby
+Points           ${user.points}
+Flips            ${user.flipsWon} Won / ${user.flipsLost} Lost
+Flip Returns     ${user.pointsWon} Points Won / ${user.pointsLost} Points Lost
+Avg Flips        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
+Max Flip Streak  ${user.maxWinStreak} Won / ${user.maxLossStreak} Lost
+Current Streak   ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
+Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Recieved           
+Active           ${days} days / ${hours} hours / ${minutes} minutes\`\`\``
         })
     }
 }
