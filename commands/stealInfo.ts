@@ -1,31 +1,21 @@
-import { ICallback, ICommand } from "../wokTypes";
+import { ICommand } from "../wokTypes";
+import getRandomValues from 'get-random-values'
 
 const stealInfo: ICommand = {
-    name: 'stealInfo',
+    name: 'test',
     category: 'asd',
     description: 'asds',
     ownerOnly: true,
-    callback: (options: ICallback) => {
-        const { guild, message } = options
+    callback: () => {
+        //const { guild, message } = options
+        let i = 0
+        let avg = 0
+        while ( i < 10000) {
+            avg += getRandomValues(new Uint8Array(1))[0];
+            i++
+        }
 
-        guild.members.fetch()
-            .then((members) => {
-                const mems = members.map(member => {
-                    return {
-                        name: member.user.username,
-                        nickname: member.nickname,
-                        id: member.user.id
-                    }
-                })
-                const memStrings: string[] = mems.map(m => {
-                    return `Id  ${m.id}, Name: ${m.name}, Nickname: ${m.nickname}`
-                })
-                
-                message.reply({
-                    content: memStrings.join('\n')
-                })
-            })
-            .catch(console.error)
+        console.log(avg/10000)
     }
 }
 

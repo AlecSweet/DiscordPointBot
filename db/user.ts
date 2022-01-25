@@ -19,6 +19,7 @@ export interface IUser {
     weeklyClaim: Date
     pointsGiven: number
     pointsRecieved: number
+    pointsClaimed: number
 }
 
 export interface IUserUpdates {
@@ -37,6 +38,7 @@ export interface IUserUpdates {
     weeklyClaim?: Date
     pointsGiven?: number
     pointsRecieved?: number
+    pointsClaimed?: number
 }
 
 const userSchema = new Schema({
@@ -90,11 +92,11 @@ const userSchema = new Schema({
     },
     dailyClaim: {
         type: Date,
-        default: new Date()
+        default: null
     },
     weeklyClaim: {
         type: Date,
-        default: new Date()
+        default: null
     },
     pointsGiven: {
         type: Number,
@@ -104,7 +106,10 @@ const userSchema = new Schema({
         type: Number,
         default: 0
     },
-
+    pointsClaimed: {
+        type: Number,
+        default: 0
+    },
 })
 
 const userModel = model['user'] || model('user', userSchema);
@@ -130,7 +135,8 @@ export const getUser = async (id: string): Promise<IUser> => {
         dailyClaim: userEntry.dailyClaim,
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
     }
 }
 
@@ -153,7 +159,8 @@ export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUs
         dailyClaim: userEntry.dailyClaim,
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
     }
 }
 
@@ -175,6 +182,7 @@ const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> =>
         dailyClaim: userEntry.dailyClaim,
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
     }
 }

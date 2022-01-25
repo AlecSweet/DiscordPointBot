@@ -16,10 +16,11 @@ enum LeaderboardTypes {
     worstflipper = 'worstFlipper',
     bestflipper = 'bestFlipper',
     given = 'pointsGiven',
-    recieved = 'pointsRecieved',
+    received = 'pointsRecieved',
     winstreak = 'maxWinStreak',
     lossstreak = 'maxLossStreak',
-    highroller = 'highRoller'
+    highroller = 'highRoller',
+    pointsclaimed = 'pointsClaimed'
 }
 
 enum LeaderboardTitles {
@@ -39,7 +40,8 @@ enum LeaderboardTitles {
     pointsRecieved = 'Points Recieved Top',
     maxWinStreak = 'Max Win Streak Top',
     maxLossStreak = 'Max Loss Streak Top',
-    highRoller = 'Flip Average Bet'
+    highRoller = 'Flip Average Bet',
+    pointsClaimed = 'Points Claimed Top'
 }
 
 
@@ -99,6 +101,7 @@ const leaderboardAggregates = {
         {$addFields: { avgPPB: { $divide: [ "$totalPoints", "$flips"]}}},
         {$sort: {avgPPB:-1}},
     ],
+    pointsClaimed: [{$match: { pointsClaimed: {$gt: 0}}}, {$sort:{pointsClaimed:-1}}],
 }
 
 const leaderboard: ICommand = {

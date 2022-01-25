@@ -8,8 +8,6 @@ dotenv.config()
 
 process.on('uncaughtException', (err) => {console.log(err)})
 
-global.crypto = require('crypto')
-
 const client = new Client({ 
     intents: [
             Intents.FLAGS.GUILDS, 

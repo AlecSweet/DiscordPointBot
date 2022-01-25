@@ -1,11 +1,13 @@
 import getUserAndAccruePoints, { addPoints, checkAndTriggerUserCooldown } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
+import getRandomValues from 'get-random-values'
 import { updateUser } from "../db/user";
 dotenv.config()
 
 const myPoints: ICommand = {
     name: 'flip',
+    aliases: ['f','filp','fipl','lipf','pilf','fpil'],
     category: 'gambling',
     description: 'lose some points',
     expectedArgs: '<# of points to lose>',
@@ -34,8 +36,10 @@ const myPoints: ICommand = {
             return
         }
 
-        const roll = Math.random()
-        const won = !(roll < .5)
+        const arr = new Uint8Array(1);
+        getRandomValues(arr);
+        const roll = arr[0]
+        const won = !(roll < 128)
         if (won) {
             await addPoints(user, points)
 
@@ -83,13 +87,7 @@ const myPoints: ICommand = {
             )
         }
 
-            // This jazz is necessary to translate from a random integer to a floating point from 0 to 1
-            //return arr[0]/(0xffffffff + 1);
-        //const  arr = new Uint32Array(1);
-        //crypto.getRandomValues(arr);
-        
-       // console.log(arr ? arr : 'fucked')
-        const rollFormatted = Math.ceil(((roll) * 100))
+        const rollFormatted = roll
         Promise.all([
             [
                 message.react('3️⃣'), 

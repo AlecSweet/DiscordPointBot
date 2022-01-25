@@ -48,7 +48,8 @@ Flip Returns     ${user.pointsWon} Points Won / ${user.pointsLost} Points Lost
 Avg Flips        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
 Max Flip Streak  ${user.maxWinStreak} Won / ${user.maxLossStreak} Lost
 Current Streak   ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
-Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Recieved           
+Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Received
+Points Claimed   ${user.pointsClaimed} Claimed           
 Active           ${days} days / ${hours} hours / ${minutes} minutes\`\`\``
         })
     }
