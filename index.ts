@@ -1,9 +1,10 @@
 import { Client, Intents } from "discord.js";
 import WOKCommands from "wokcommands";
 import path from "path";
-import handleVoiceActivity from "./events/handleVoiceActivity";
+import handleVoiceActivity, { checkInactivity } from "./events/handleVoiceActivity";
 import * as dotenv from "dotenv"
 import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
+import { CronJob } from 'cron';
 dotenv.config()
 
 process.on('uncaughtException', (err) => {console.log(err)})
@@ -22,8 +23,10 @@ const client = new Client({
 
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user?.tag}!`);
-    client.guilds.fetch(`${process.env.GUILD_ID}`)
+    let currentGuild
+    await client.guilds.fetch(`${process.env.GUILD_ID}`)
         .then((guild) => {
+            currentGuild = guild
             const activeChannelIds = guild.channels.cache.filter(channel => {
                     return channel.type === 'GUILD_VOICE' && channel.id !== channel.guild.afkChannelId
                 }).map(channel => {
@@ -38,6 +41,11 @@ client.on('ready', async () => {
         mongoUri: process.env.MONGO_URI,
         botOwners: `${process.env.BOT_OWNER}`
     })
+
+    const checkInactiveMembers = new CronJob('0 */5 * * * *', function() {
+        checkInactivity(currentGuild)
+    })
+    checkInactiveMembers.start();
 })
 
 client.on('voiceStateUpdate', async (oldState, newState) => {

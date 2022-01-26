@@ -1,5 +1,5 @@
-import { VoiceState } from "discord.js"
-import { getUser, updateUser } from "../db/user"
+import { Guild, VoiceState } from "discord.js"
+import userModel, { getUser, updateUser } from "../db/user"
 import * as dotenv from "dotenv"
 import { disableUserActivityAndAccruePoints } from "../util/userUtil"
 import { getCurrentGuildInfo, ICurrentGuildInfo } from "../db/guildInfo"
@@ -26,3 +26,17 @@ const handleVoiceActivity = async (oldState: VoiceState, newState: VoiceState) =
 }
 
 export default handleVoiceActivity
+
+export const checkInactivity = async (guild: Guild) => {
+    const guildInfo = await getCurrentGuildInfo()
+    const resultMembers = await userModel.find({activeStartDate: { $ne: null }})
+    resultMembers.forEach(async (member) => {
+        try {
+            const voiceState = (await guild.members.fetch(member.id)).voice
+            if (!isActive(voiceState, guildInfo)) { 
+                disableUserActivityAndAccruePoints(voiceState.id)
+            }
+        // eslint-disable-next-line no-empty
+        } catch(e) {}
+    })
+}

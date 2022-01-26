@@ -5,7 +5,7 @@ import getRandomValues from 'get-random-values'
 import { updateUser } from "../db/user";
 dotenv.config()
 
-const myPoints: ICommand = {
+const flip: ICommand = {
     name: 'flip',
     aliases: ['f','filp','fipl','lipf','pilf','fpil'],
     category: 'gambling',
@@ -105,4 +105,4 @@ const myPoints: ICommand = {
     }
 }
 
-export default myPoints
+export default flip

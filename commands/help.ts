@@ -2,6 +2,7 @@ import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
     name: 'help',
+    aliases: ['elp'],
     category: 'help',
     description: 'See command',
     cooldown: '2s',
@@ -9,12 +10,14 @@ const points: ICommand = {
         const { message } = options
 
         message.reply({content: 
-`Point Bot Commands:
-Leaderboards:      !top
-Statistics:              !stats <Optional @User>
-Check Points:       !points <Optional @User>
+`Point Bot Commands:\`\`\`
+Leaderboards:   !top
+Statistics:     !stats <Optional @User>
+Check Points:   !points <Optional @User>
 50/50 Gamble:   !flip <# or "all">
-Give Points:          !give <@User> <#>`})
+Give Points:    !give <@User> <#>
+Claim Bonus:    !Claim <daily or weekly>\`\`\``
+})
     }
 }
 
