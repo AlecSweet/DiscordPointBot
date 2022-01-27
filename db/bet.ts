@@ -2,6 +2,13 @@ import { Schema, model } from "mongoose";
 import * as dotenv from "dotenv"
 dotenv.config()
 
+export interface IUserBet {
+    id: string
+    outcome: number
+    bet: number
+    name: string
+}
+
 const userBet = new Schema({
     id: {
         type: String,
@@ -16,6 +23,13 @@ const userBet = new Schema({
         required: true,
     },
 });
+
+export interface IBet {
+    id?: string
+    messageId?: string
+    numOutcomes?: number
+    userBets?: IUserBet[]
+}
 
 const betSchema = new Schema({
     id: {
@@ -35,19 +49,14 @@ const betSchema = new Schema({
 
 const betModel = model['bet'] || model('bet', betSchema);
 
-export const getBet = async (id: string) => {
-    return await betModel.findOne({id})
+export const getBet = async (id: string): Promise<IBet> => {
+    return (await betModel.findOne({id})) as IBet
 }
 
-/*export const updateBet = async (activeChannelIds: string[], afkChannelId: string) => {
-    const updateResult = await guildModel.findOneAndUpdate(
-        {id: `${process.env.GUILD_ID}`},
-        {$set: {activeChannelIds, afkChannelId}},
-        {new: true}
-    )
-    updateResult ? updateResult : await new guildModel({
-        id: `${process.env.GUILD_ID}`,
-        activeChannelIds,
-        afkChannelId,
-    }).save()
-}*/
+export const updateBet = async (id: string, betUpdates: IBet) => {
+    await betModel.findOneAndUpdate({id}, {$set: {...(betUpdates)}})
+}
+
+export const insertBet = async (bet: IBet) => {
+    await new betModel({...(bet)}).save()
+}

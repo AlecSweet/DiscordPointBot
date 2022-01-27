@@ -16,7 +16,7 @@ Statistics:     !stats <Optional @User>
 Check Points:   !points <Optional @User>
 50/50 Gamble:   !flip <# or "all">
 Give Points:    !give <@User> <#>
-Claim Bonus:    !Claim <daily or weekly>\`\`\``
+Claim Bonus:    !claim <daily or weekly> or !daily/!weekly \`\`\``
 })
     }
 }

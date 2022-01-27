@@ -1,5 +1,5 @@
-import { updateUser } from "../db/user";
-import getUserAndAccruePoints, { addPoints, checkAndTriggerUserCooldown } from "../util/userUtil";
+import { claimDaily, claimWeekly } from "../util/claimUtil";
+import { checkAndTriggerUserCooldown } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 enum ClaimType {
@@ -36,40 +36,12 @@ const claim: ICommand = {
             return
         }
 
-        const startDay = new Date()
-        startDay.setUTCHours(0,0,0,0)
-
-        let user = await getUserAndAccruePoints(id)
-
         if (claim === 'daily') { 
-            const nextDay = new Date(startDay.getTime() + 24 * 60 * 60 * 1000);
-            if (!user.dailyClaim || user.dailyClaim === null || startDay.getTime() > user.dailyClaim.getTime()) {
-                await addPoints(user, 30)
-                user = await updateUser(id, {dailyClaim: new Date(), pointsClaimed: user.pointsClaimed + 30})
-                message.reply({content: `You got your daily 30 ${process.env.DOGEGE_JAM_EMOJI}`})
-            } else {
-                message.reply({content: `Wait until ${nextDay} ${process.env.NOPPERS_EMOJI}`})
-            }
+            claimDaily(id, message)
         } else if (claim === 'weekly') {
-            const startWeek = setToMonday(startDay);
-            const nextWeek = new Date(startWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
-            if (!user.weeklyClaim || user.weeklyClaim === null || startWeek.getTime() > user.weeklyClaim.getTime()) {
-                await addPoints(user, 120)
-                user = await updateUser(id,{weeklyClaim: new Date(), pointsClaimed: user.pointsClaimed + 120})
-                message.reply({content: `You got your weekly 120 ${process.env.DOGEGE_JAM_EMOJI}`})
-            } else {
-                message.reply({content: `Wait until ${nextWeek} ${process.env.NOPPERS_EMOJI}`})
-            }
+            claimWeekly(id, message)
         }
     }
 }
 
 export default claim
-
-const setToMonday = (date: Date): Date => {
-    const day = date.getDay() || 7;  
-    if( day !== 1 ) {
-        date.setHours(-24 * (day - 1)); 
-    }
-    return date;
-}
