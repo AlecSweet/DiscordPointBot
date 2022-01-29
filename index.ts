@@ -5,6 +5,7 @@ import handleVoiceActivity, { checkInactivity } from "./events/handleVoiceActivi
 import * as dotenv from "dotenv"
 import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
 import { CronJob } from 'cron';
+import { Mutex, MutexInterface, withTimeout } from "async-mutex";
 dotenv.config()
 
 process.on('uncaughtException', (err) => {console.log(err)})
@@ -17,9 +18,12 @@ const client = new Client({
             Intents.FLAGS.GUILD_MEMBERS,
             Intents.FLAGS.GUILD_PRESENCES,
             Intents.FLAGS.GUILD_MESSAGE_REACTIONS,
-            Intents.FLAGS.GUILD_VOICE_STATES
+            Intents.FLAGS.GUILD_VOICE_STATES,
+            Intents.FLAGS.GUILD_INTEGRATIONS
         ] 
 })
+
+export const userMutexes = new Map<string, MutexInterface>()
 
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user?.tag}!`);
@@ -34,7 +38,11 @@ client.on('ready', async () => {
                 })
             const afkChannelId = guild.afkChannelId ? guild.afkChannelId : ''
             updateCurrentGuildInfo(activeChannelIds, afkChannelId)
+            guild.members.cache.map(member => {
+                userMutexes.set(member.user.id, withTimeout(new Mutex(), 10000))
+            })
         })
+
     new WOKCommands(client, {
         commandsDir: path.join(__dirname, 'commands'),
         typeScript: true,

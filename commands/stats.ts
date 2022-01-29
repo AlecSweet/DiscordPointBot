@@ -1,5 +1,6 @@
+import { userMutexes } from "..";
 import isValidUserArg from "../util/isValidUserArg";
-import getUserAndAccruePoints, { checkAndTriggerUserCooldown } from "../util/userUtil";
+import getUserAndAccruePoints from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -13,6 +14,11 @@ const points: ICommand = {
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
 
+        if (!(message.channel.type === "GUILD_TEXT")) {
+            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
         let id = message.author.id
         if (args[0]) {
             id = args[0].replace(/\D/g,'')
@@ -22,24 +28,24 @@ const points: ICommand = {
             }
         }
 
-        const cooldown = await checkAndTriggerUserCooldown(id)
-        if (cooldown > -1) {
-            message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
+        const userMutex = userMutexes.get(id)
+        if (!userMutex) {
+            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
             return
         }
+        userMutex.runExclusive(async() => {
+            const user = await getUserAndAccruePoints(id)
+            const days = Math.floor(user.secondsActive / 86400)
+            const secLeftAfterDays = user.secondsActive % 86400
+            const hours = Math.floor(secLeftAfterDays / 3600)
+            const secLeftAfterHours = secLeftAfterDays % 3600
+            const minutes = Math.floor(secLeftAfterHours / 60)
 
-        const user = await getUserAndAccruePoints(id)
-        const days = Math.floor(user.secondsActive / 86400)
-        const secLeftAfterDays = user.secondsActive % 86400
-        const hours = Math.floor(secLeftAfterDays / 3600)
-        const secLeftAfterHours = secLeftAfterDays % 3600
-        const minutes = Math.floor(secLeftAfterHours / 60)
+            const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
+            const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
+            const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
 
-        const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
-        const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
-        const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
-
-        message.reply({content: 
+            message.reply({content: 
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
 Points           ${user.points}
@@ -51,7 +57,8 @@ Current Streak   ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `
 Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Received
 Points Claimed   ${user.pointsClaimed} Claimed           
 Active           ${days} days / ${hours} hours / ${minutes} minutes\`\`\``
-        })
+            })
+        }).catch(() => {})
     }
 }
 

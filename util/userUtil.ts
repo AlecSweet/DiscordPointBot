@@ -48,6 +48,12 @@ export const checkAndTriggerUserCooldown = async (id: string): Promise<number> =
         return -1
     }
     return 3000 - (currentDate.getTime() - user.cooldown.getTime())
+
+    /*const cooldown = await checkAndTriggerUserCooldown(id)
+    if (cooldown > -1) {
+        message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
+        return
+    }*/
 }
 
 export default getUserAndAccruePoints

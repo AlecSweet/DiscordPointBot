@@ -1,5 +1,6 @@
+import { userMutexes } from "..";
 import isValidUserArg from "../util/isValidUserArg";
-import getUserAndAccruePoints, { checkAndTriggerUserCooldown } from "../util/userUtil";
+import getUserAndAccruePoints from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -13,17 +14,23 @@ const points: ICommand = {
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
 
-        const id = args[0] ? args[0].replace(/\D/g,'') : message.author.id
-
-        const cooldown = await checkAndTriggerUserCooldown(id)
-        if (cooldown > -1) {
-            message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
+        if (!(message.channel.type === "GUILD_TEXT")) {
+            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
             return
         }
 
+        const id = args[0] ? args[0].replace(/\D/g,'') : message.author.id
+
         if (!args[0]) {
-            const self = await getUserAndAccruePoints(id)
-            message.reply({content: `You have ${self.points} points`})
+            const userMutex = userMutexes.get(id)
+            if(!userMutex) {
+                message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+                return
+            }
+            userMutex.runExclusive(async() => {
+                const self = await getUserAndAccruePoints(id)
+                message.reply({content: `You have ${self.points} points`})
+            }).catch(() => {})
             return
         }
 
@@ -32,8 +39,15 @@ const points: ICommand = {
             return
         }
 
-        const user = await getUserAndAccruePoints(id)
-        message.reply({content: `${args[0]} has ${user.points} points`})
+        const userMutex = userMutexes.get(id)
+        if(!userMutex) {
+            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+        userMutex.runExclusive(async() => {
+            const user = await getUserAndAccruePoints(id)
+            message.reply({content: `${args[0]} has ${user.points} points`})
+        }).catch(() => {})
     }
 }
 

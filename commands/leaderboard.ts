@@ -116,6 +116,11 @@ const leaderboard: ICommand = {
     callback: async (options: ICallback) => {
         const { message, args, guild} = options
 
+        if (!(message.channel.type === "GUILD_TEXT")) {
+            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
         let leaderboardType = args[0] ? args[0].toLowerCase() : args[0]
         if (!leaderboardType || !LeaderboardTypes[leaderboardType]) {
             const validTypes: string[] = []

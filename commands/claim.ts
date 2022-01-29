@@ -1,5 +1,5 @@
+import { userMutexes } from "..";
 import { claimDaily, claimWeekly } from "../util/claimUtil";
-import { checkAndTriggerUserCooldown } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 enum ClaimType {
@@ -18,6 +18,11 @@ const claim: ICommand = {
     callback: async (options: ICallback) => {
         const { message, args } = options
 
+        if (!(message.channel.type === "GUILD_TEXT")) {
+            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
         const claim = args[0].toLowerCase()
         if (!claim || !ClaimType[claim]) {
             const validTypes: string[] = []
@@ -30,17 +35,18 @@ const claim: ICommand = {
 
         const id = message.author.id
 
-        const cooldown = await checkAndTriggerUserCooldown(id)
-        if (cooldown > -1) {
-            message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
+        const userMutex = userMutexes.get(id)
+        if (!userMutex) {
+            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
             return
         }
-
-        if (claim === 'daily') { 
-            claimDaily(id, message)
-        } else if (claim === 'weekly') {
-            claimWeekly(id, message)
-        }
+        userMutex.runExclusive(async() => {
+            if (claim === 'daily') { 
+                claimDaily(id, message)
+            } else if (claim === 'weekly') {
+                claimWeekly(id, message)
+            }
+        }).catch(() => {})
     }
 }
 

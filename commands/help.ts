@@ -9,6 +9,11 @@ const points: ICommand = {
     callback: async (options: ICallback) => {
         const { message } = options
 
+        if (!(message.channel.type === "GUILD_TEXT")) {
+            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
         message.reply({content: 
 `Point Bot Commands:\`\`\`
 Leaderboards:   !top
