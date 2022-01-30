@@ -1,6 +1,6 @@
 import { userMutexes } from "..";
 import isValidUserArg from "../util/isValidUserArg";
-import getUserAndAccruePoints from "../util/userUtil";
+import getUser from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -28,7 +28,7 @@ const points: ICommand = {
                 return
             }
             userMutex.runExclusive(async() => {
-                const self = await getUserAndAccruePoints(id)
+                const self = await getUser(id)
                 message.reply({content: `You have ${self.points} points`})
             }).catch(() => {})
             return
@@ -45,7 +45,7 @@ const points: ICommand = {
             return
         }
         userMutex.runExclusive(async() => {
-            const user = await getUserAndAccruePoints(id)
+            const user = await getUser(id)
             message.reply({content: `${args[0]} has ${user.points} points`})
         }).catch(() => {})
     }

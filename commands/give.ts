@@ -1,9 +1,7 @@
-import { isGetAccessor } from "typescript";
 import { userMutexes } from "..";
-import { updateUser } from "../db/user";
 import isValidNumberArg from "../util/isValidNumberArg";
 import isValidUserArg from "../util/isValidUserArg";
-import getUserAndAccruePoints, { addPoints } from "../util/userUtil";
+import getUser, { addPoints, updateUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const give: ICommand = {
@@ -43,7 +41,7 @@ const give: ICommand = {
         
         let failed = false
         userMutex.runExclusive(async() => {
-            const user = await getUserAndAccruePoints(message.author.id)
+            const user = await getUser(message.author.id)
             
             points = args[1].toUpperCase() === 'ALL' ? user.points : Number(args[1])
 
@@ -59,7 +57,7 @@ const give: ICommand = {
                 return
             }
 
-            const author = await addPoints(await getUserAndAccruePoints(message.author.id), -points)
+            const author = await addPoints(user.id, -points)
             await updateUser(author.id, {pointsGiven: author.pointsGiven + points})
             message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
         }).then(() => {
@@ -70,7 +68,7 @@ const give: ICommand = {
                     return
                 }
                 gifteeMutex.runExclusive(async() => {
-                    const giftee = await addPoints(await getUserAndAccruePoints(gifteeId), points)
+                    const giftee = await addPoints(gifteeId, points)
                     await updateUser(giftee.id, {pointsRecieved: giftee.pointsRecieved + points})
                 }).catch(() => {})
             }

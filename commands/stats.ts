@@ -1,6 +1,6 @@
 import { userMutexes } from "..";
 import isValidUserArg from "../util/isValidUserArg";
-import getUserAndAccruePoints from "../util/userUtil";
+import getUser from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const points: ICommand = {
@@ -34,7 +34,7 @@ const points: ICommand = {
             return
         }
         userMutex.runExclusive(async() => {
-            const user = await getUserAndAccruePoints(id)
+            const user = await getUser(id)
             const days = Math.floor(user.secondsActive / 86400)
             const secLeftAfterDays = user.secondsActive % 86400
             const hours = Math.floor(secLeftAfterDays / 3600)

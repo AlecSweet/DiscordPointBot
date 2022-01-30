@@ -68,4 +68,10 @@ client.on('channelCreate', async (channel) => {
     }
 })
 
+client.on('guildMemberAdd', (member) => {
+    if (!userMutexes.get(member.user.id)) {
+        userMutexes.set(member.user.id, withTimeout(new Mutex(), 10000))
+    }
+})
+
 client.login(process.env.TOKEN)

@@ -1,8 +1,7 @@
-import getUserAndAccruePoints, { addPoints } from "../util/userUtil";
+import getUser, { addPoints, updateUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
-import { updateUser } from "../db/user";
 import { userMutexes } from "..";
 dotenv.config()
 
@@ -29,7 +28,7 @@ const flip: ICommand = {
             return
         }
         userMutex.runExclusive(async() => {
-            let user = await getUserAndAccruePoints(message.author.id)
+            let user = await getUser(message.author.id)
 
             const points = args[0].toUpperCase() === 'ALL' ? user.points : Number(args[0])
             if (isNaN(points) || !Number.isInteger(points) || points < 1) {
@@ -47,7 +46,7 @@ const flip: ICommand = {
             const roll = arr[0]
             const won = !(roll < 128)
             if (won) {
-                await addPoints(user, points)
+                await addPoints(user.id, points)
 
                 let newMaxStreak = {}
                 let flipStreak = user.flipStreak
@@ -70,7 +69,7 @@ const flip: ICommand = {
                     }
                 )
             } else {
-                await addPoints(user, -points)
+                await addPoints(user.id, -points)
 
                 let newMaxStreak = {}
                 let flipStreak = user.flipStreak

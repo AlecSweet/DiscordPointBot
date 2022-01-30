@@ -1,5 +1,5 @@
-import { updateUser } from "../db/user";
 import isValidUserArg from "../util/isValidUserArg";
+import { updateUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const setPoints: ICommand = {

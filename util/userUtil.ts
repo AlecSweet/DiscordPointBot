@@ -1,8 +1,6 @@
-import { getUser, IUser, updateUser } from "../db/user"
+import userModel, { IUser, IUserUpdates } from "../db/user"
 
-const accruePoints = async (user: IUser, disableActivity: boolean, addPoints?: number): Promise<IUser> => {
-    addPoints = (addPoints !== undefined ? addPoints : 0)
-    
+const accruePoints = async (user: IUser, disableActivity: boolean): Promise<IUser> => {
     if (user.activeStartDate) {
         const currentDate = new Date()
         const timeDifference = Math.abs(currentDate.getTime() - user.activeStartDate.getTime())
@@ -11,23 +9,15 @@ const accruePoints = async (user: IUser, disableActivity: boolean, addPoints?: n
         const newActiveStartDate = new Date(currentDate.getTime() - msLeftOver)
 
         const minutesActive = Math.floor(timeDifference / 60000)
-        user = await updateUser(
-            user.id, 
-            {
-                points: user.points + minutesActive + addPoints, 
-                activeStartDate: disableActivity ? null : newActiveStartDate,
-                secondsActive: user.secondsActive + (minutesActive * 60)
-            }
-        )
-    } else if (!user.activeStartDate && addPoints) {
-        user = await updateUser(user.id, {points: user.points + addPoints})
+        await incUser(user.id, {points: minutesActive, secondsActive: minutesActive * 60})
+        user = await updateUser(user.id, {activeStartDate: disableActivity ? null : newActiveStartDate})
     }
 
     return user
 }
 
-export const addPoints = async(user: IUser, points: number): Promise<IUser> => {
-    return await accruePoints(user, false, points)
+export const addPoints = async(id: string, points: number): Promise<IUser> => {
+    return await incUser(id, {points: points})
 }
 
 export const disableUserActivityAndAccruePoints = async (id: string): Promise<IUser> => {
@@ -35,25 +25,120 @@ export const disableUserActivityAndAccruePoints = async (id: string): Promise<IU
     return await accruePoints(user, true)
 }
 
-const getUserAndAccruePoints = async (id: string): Promise<IUser> => {
-    const user = await getUser(id)
+const getUser = async (id: string): Promise<IUser> => {
+    const user = await getUserNoAccrue(id)
     return await accruePoints(user, false)
 }
 
-export const checkAndTriggerUserCooldown = async (id: string): Promise<number> => {
-    const user = await getUser(id)
+export default getUser
+
+/*export const checkAndTriggerUserCooldown = async (id: string): Promise<number> => {
+    const user = await getUserNoAccrue(id)
     const currentDate = new Date()
     if (!user.cooldown || currentDate.getTime() - user.cooldown.getTime() > 3000) {
         updateUser(id, {cooldown: currentDate})
         return -1
     }
     return 3000 - (currentDate.getTime() - user.cooldown.getTime())
+}*/
 
-    /*const cooldown = await checkAndTriggerUserCooldown(id)
-    if (cooldown > -1) {
-        message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
-        return
-    }*/
+/*const cooldown = await checkAndTriggerUserCooldown(id)
+if (cooldown > -1) {
+    message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
+    return
+}*/
+
+export const getUserNoAccrue = async (id: string): Promise<IUser> => {
+    const findResult = await userModel.findOne({id})
+    const userEntry = findResult ? findResult : await insertUser(id)
+    return {
+        id: userEntry.id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
+    }
 }
 
-export default getUserAndAccruePoints
+const incUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
+    const updateResult = await userModel.findOneAndUpdate({id}, {$inc: {...(updates)}}, {new: true})
+    const userEntry = updateResult ? updateResult : await insertUser(id, updates)
+    return {
+        id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
+    }
+}
+
+export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
+    const updateResult = await userModel.findOneAndUpdate({id}, {$set: {...(updates)}}, {new: true})
+    const userEntry = updateResult ? updateResult : await insertUser(id, updates)
+    return {
+        id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
+    }
+}
+
+const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> => {
+    const userEntry = await new userModel({id, ...(updates !== undefined ? updates : {})}).save()
+    return {
+        id: userEntry.id, 
+        points: userEntry.points, 
+        activeStartDate: userEntry.activeStartDate,
+        flipsLost: userEntry.flipsLost,
+        flipsWon: userEntry.flipsWon,
+        pointsWon: userEntry.pointsWon,
+        pointsLost: userEntry.pointsLost,
+        secondsActive: userEntry.secondsActive,
+        cooldown: userEntry.cooldown,
+        flipStreak: userEntry.flipStreak,
+        maxWinStreak: userEntry.maxWinStreak,
+        maxLossStreak: userEntry.maxLossStreak,
+        dailyClaim: userEntry.dailyClaim,
+        weeklyClaim: userEntry.weeklyClaim,
+        pointsGiven: userEntry.pointsGiven,
+        pointsRecieved: userEntry.pointsRecieved,
+        pointsClaimed: userEntry.pointsClaimed
+    }
+}

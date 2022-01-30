@@ -1,9 +1,9 @@
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import isValidNumberArg from "../util/isValidNumberArg";
-import { insertBet, IUserBet } from "../db/bet";
+import betModel, { insertBet, IUserBet } from "../db/bet";
 import { Message, MessageSelectOptionData } from "discord.js";
-import getUserAndAccruePoints from "../util/userUtil";
+import getUser, { addPoints } from "../util/userUtil";
 import { userMutexes } from "..";
 dotenv.config()
 
@@ -67,11 +67,12 @@ const openBet: ICommand = {
                 name: `${message.author.username}'s Bet`,
                 autoArchiveDuration: 1440,
                 reason: 'testing a fucking bet',
+                rateLimitPerUser: 3
             })
             .then(async threadChannel => {
                 insertBet({
-                    id: message.author.id,
-                    messageId: threadChannel.id,
+                    ownerId: message.author.id,
+                    threadId: threadChannel.id,
                     numOutcomes: numOutcomes,
                     userBets: []
                 })
@@ -96,7 +97,7 @@ const openBet: ICommand = {
                 collector.on('collect', async (cMessage: Message) => {
                     if (client.user && client.user.id === cMessage.author.id){ return }
 
-                    const result = await manageUserBets(cMessage, userBets, outcomeMessages)
+                    const result = await manageUserBets(cMessage, userBets, outcomeMessages, threadChannel.id)
                     cMessage.delete()
                     if (result.outcomeIndex > -1) {
                         const outcomeBets = userBets.filter(b => b.outcome === result.outcomeIndex)
@@ -204,10 +205,11 @@ interface IManageUserBetReturn {
     errMessage: Message<boolean> | null
 }
 
-const manageUserBets = async (message: Message, currentBets: IUserBet[], outcomeMessages: Message<boolean>[]): Promise<IManageUserBetReturn> => {
+const manageUserBets = async (message: Message, currentBets: IUserBet[], outcomeMessages: Message<boolean>[], threadId: string): Promise<IManageUserBetReturn> => {
 
     if (!message.reference || !message.reference.messageId) {
-        return {outcomeIndex: -1, errMessage: null}
+        const errMes = await message.reply({content: `Reply to an outcome with # of points to bet ${process.env.NOPPERS_EMOJI}`})
+        return {outcomeIndex: -1, errMessage: errMes}
     }
  
     const outcomeIndex = outcomeMessages.findIndex(oM => message.reference && message.reference.messageId === oM.id)
@@ -220,7 +222,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
         }
         const returnVal: IManageUserBetReturn = {outcomeIndex: -1, errMessage: null}
         await userMutex.runExclusive(async() => {
-            const user = await getUserAndAccruePoints(message.author.id)
+            const user = await getUser(message.author.id)
             if (user) {
                 const points = message.content.toUpperCase() === 'ALL' ? user.points : Number(message.content)
                 if (!isValidNumberArg(points)) {
@@ -235,7 +237,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
                     return
                 }
 
-                const userBet = currentBets.find(ub => ub.id && ub.id === message.author.id);
+                const userBet = currentBets.find(ub => ub.userId && ub.userId === message.author.id);
                 if (userBet) {
                     if (userBet.outcome !== outcomeIndex) {
                         const errM = await message.reply({content: `You can only bet on one outcome ${process.env.NOPPERS_EMOJI}`})
@@ -244,15 +246,25 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
                     } else {
                         userBet.bet += points
                         returnVal.outcomeIndex = outcomeIndex
+                        await betModel.updateOne(
+                            { threadId },
+                            { $inc: { "userBets.$[user].bet": points } },
+                            { arrayFilters: [{ "user.userId": {$eq: userBet.userId}}]}
+                        )
                         return
                     }
                 } else {
-                    currentBets.push({
-                        id: message.author.id,
+                    const newUserBet = {
+                        userId: message.author.id,
                         outcome: outcomeIndex,
                         bet: points,
                         name: message.author.username
-                    })
+                    }
+                    currentBets.push(newUserBet)
+                    await betModel.updateOne(
+                        { threadId },
+                        { $push: { userBets: newUserBet } }
+                    )
                     returnVal.outcomeIndex = outcomeIndex
                     return
                 }
@@ -261,5 +273,6 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
         return returnVal
     }
 
-    return {outcomeIndex: -1, errMessage: null}
+    const errMes = await message.reply({content: `Reply to an outcome with # of points to bet ${process.env.NOPPERS_EMOJI}`})
+    return {outcomeIndex: -1, errMessage: errMes}
 }
