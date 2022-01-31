@@ -92,7 +92,7 @@ const flip: ICommand = {
                 )
             }
 
-            const rollFormatted = roll
+            const rollFormatted = roll + 1
             Promise.all([
                 [
                     message.react('3️⃣'), 
@@ -101,8 +101,8 @@ const flip: ICommand = {
                     [
                         won ? await message.react('✅') : await message.react('❌'),
                         won ? 
-                            message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled a ${rollFormatted}`}) :
-                            message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled a ${rollFormatted}`})
+                            message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256`}) :
+                            message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`})
                     ]
                 ],
                 await new Promise(resolve => setTimeout(resolve, 400))

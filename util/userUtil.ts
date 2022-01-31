@@ -20,6 +20,11 @@ export const addPoints = async(id: string, points: number): Promise<IUser> => {
     return await incUser(id, {points: points})
 }
 
+export const addPointsAndAccrue = async(id: string, points: number): Promise<IUser> => {
+    const user = await incUser(id, {points: points})
+    return await accruePoints(user, false)
+}
+
 export const disableUserActivityAndAccruePoints = async (id: string): Promise<IUser> => {
     const user = await updateUser(id, {cooldown: new Date()})
     return await accruePoints(user, true)

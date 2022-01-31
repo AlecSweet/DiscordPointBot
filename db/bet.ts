@@ -10,10 +10,10 @@ export interface IUserBet {
 }
 
 export interface IBet {
-    ownerId?: string
-    threadId?: string
-    numOutcomes?: number
-    userBets?: IUserBet[]
+    ownerId: string
+    threadId: string
+    numOutcomes: number
+    userBets: IUserBet[]
 }
 
 const betSchema = new Schema({
@@ -52,14 +52,18 @@ const betModel = model['bet'] || model('bet', betSchema);
 
 export default betModel
 
-export const getBet = async (id: string): Promise<IBet> => {
-    return (await betModel.findOne({id})) as IBet
+export const getBet = async (threadId: string): Promise<IBet> => {
+    return await betModel.findOne({threadId})
 }
 
-export const updateBet = async (id: string, betUpdates: IBet) => {
-    await betModel.findOneAndUpdate({id}, {$set: {...(betUpdates)}})
+export const updateBet = async (threadId: string, betUpdates: IBet) => {
+    await betModel.findOneAndUpdate({threadId}, {$set: {...(betUpdates)}})
 }
 
 export const insertBet = async (bet: IBet) => {
     await new betModel({...(bet)}).save()
+}
+
+export const deleteBet = async (threadId: string) => {
+    return await betModel.deleteOne({threadId})
 }

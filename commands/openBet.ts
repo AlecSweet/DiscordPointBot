@@ -1,10 +1,11 @@
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import isValidNumberArg from "../util/isValidNumberArg";
-import betModel, { insertBet, IUserBet } from "../db/bet";
-import { Message, MessageSelectOptionData } from "discord.js";
-import getUser, { addPoints } from "../util/userUtil";
+import betModel, { deleteBet, getBet, insertBet, IUserBet } from "../db/bet";
+import { Message, MessageSelectOptionData, ThreadChannel } from "discord.js";
+import getUser, { addPoints, addPointsAndAccrue } from "../util/userUtil";
 import { userMutexes } from "..";
+import { getOdds, getPayouts, returnPointsDeleteBet } from "../util/betUtil";
 dotenv.config()
 
 const openBet: ICommand = {
@@ -25,6 +26,11 @@ const openBet: ICommand = {
             return
         }
 
+        if(await betModel.findOne({ownerId: message.author.id})) {
+            message.reply({content: `Only one running bet per user ${process.env.NOPPERS_EMOJI}. If you want to cancel your current bet use !forceCancelBet`})
+            return
+        }
+
         const numOutcomes = Number(args[0])
         if (!isValidNumberArg(numOutcomes) || numOutcomes < 2 || numOutcomes > 4) {
             message.reply({content: `${numOutcomes} ain a valid number of outcomes ${process.env.NOPPERS_EMOJI}`})
@@ -40,8 +46,9 @@ const openBet: ICommand = {
         const filter = m => m.author.id === message.author.id
 
         let question = ''
-        const outcomes: Message<boolean>[] = []
+        const outcomeLabels: string[] = []
 
+        let intialCreationFailed = false
         await message.reply({content: `Enter the bet question and each outcome serpartely in the next ${numOutcomes+1} messages`})
             .then(async () => {
                 await message.channel.awaitMessages({filter, max: 1+numOutcomes, time: 120000, errors: ['time']})
@@ -51,22 +58,24 @@ const openBet: ICommand = {
                             if (ind === 0) {
                                 question = m.content
                             } else {
-                                outcomes.push(m)
+                                outcomeLabels.push(m.content)
                             }
                             ind += 1
                         })
                     })
                     .catch(() => {
+                        intialCreationFailed = true
                         message.reply({content:`Bet creation timed out ${process.env.NOPPERS_EMOJI}. Type faster`});
                     });
             })
+        if (intialCreationFailed) { return }
 
         const userBets: IUserBet[] = []
         message.channel.threads
             .create({
                 name: `${message.author.username}'s Bet`,
                 autoArchiveDuration: 1440,
-                reason: 'testing a fucking bet',
+                reason: 'a fucking bet',
                 rateLimitPerUser: 3
             })
             .then(async threadChannel => {
@@ -81,9 +90,9 @@ const openBet: ICommand = {
                 })
                 const outcomeMessages: Message<boolean>[] = []
                 let index = 0
-                for (const outcome of outcomes) {
+                for (const outcome of outcomeLabels) {
                     const outcomeMessage = await threadChannel.send({
-                        content:`\`\`\`${index + 1}) ${outcome.content}\`\`\``
+                        content:`\`\`\`${index + 1}) ${outcome}\`\`\``
                     })
                     outcomeMessages.push(outcomeMessage)
                     index++
@@ -100,17 +109,13 @@ const openBet: ICommand = {
                     const result = await manageUserBets(cMessage, userBets, outcomeMessages, threadChannel.id)
                     cMessage.delete()
                     if (result.outcomeIndex > -1) {
-                        const outcomeBets = userBets.filter(b => b.outcome === result.outcomeIndex)
-                        const outcomeBetsFormatted = outcomeBets.map(obf => {
-                            return `    ${obf.name}: ${obf.bet}\n`
-                        })
-                        outcomeMessages[result.outcomeIndex].edit(
-                            `\`\`\`${result.outcomeIndex + 1}) ${outcomes[result.outcomeIndex].content}\n${outcomeBetsFormatted.join('')}\`\`\``)
-                        
-                    } else if (result.errMessage !== null) {
+                        editOutcomeMessages(userBets, outcomeMessages, outcomeLabels, numOutcomes)
+                    }
+
+                    if (result.ubMessage !== null) {
                         setTimeout(() => { 
-                            if(result.errMessage !== null) {
-                                result.errMessage.delete()
+                            if(result.ubMessage !== null) {
+                                result.ubMessage.delete()
                             }
                         }, 5000)
                     }
@@ -119,9 +124,9 @@ const openBet: ICommand = {
                 collector.on('end', () => {
                     threadChannel.setRateLimitPerUser(20000).then(async () => {
                         const selectMenuOptions: MessageSelectOptionData[] = []
-                        outcomes.forEach((outcome, index) => {
+                        outcomeLabels.forEach((outcome, index) => {
                             selectMenuOptions.push({
-                                label: outcome.content,
+                                label: outcome,
                                 value: `${index}`
                             })
                         })
@@ -155,7 +160,7 @@ const openBet: ICommand = {
                                     selectedOutcome = Number(i.values[0])
                                     const buttonMessage = selectedOutcome < 0 ? 
                                         'Cancel Bet and Return Points' :
-                                        `Pay Out "${outcomes[selectedOutcome].content}" choosers`
+                                        `Pay Out "${outcomeLabels[selectedOutcome]}" choosers`
                                     i.update({
                                         content: `⠀\nBetting over. Close the bet when ready.`, 
                                         components: [
@@ -182,8 +187,24 @@ const openBet: ICommand = {
                                         ]
                                     })
                                 } else if (i.isButton()) {
-                                    i.deferUpdate()
                                     collector.stop()
+                                    if(selectedOutcome==-1){
+                                        i.update({
+                                            content: `⠀\nBet canceled ${process.env.SHRUGGERS_EMOJI} returning all points`, 
+                                            components: []
+                                        })
+                                        await returnPointsDeleteBet(threadChannel.id)
+                                    } else {
+                                        i.update({
+                                            content: `⠀\nPaying out "${outcomeLabels[selectedOutcome]}" choosers...`, 
+                                            components: []
+                                        })
+                                        await payoutPointsAndDeleteBet(threadChannel, numOutcomes, selectedOutcome)
+                                    }
+                                    //await threadChannel.send({content:`Archiving bet in 30 seconds...`})                      
+                                    //setTimeout(async () => { 
+                                        await threadChannel.setArchived(true)
+                                    //}, 30000)
                                 }
                             } else {
                                 const errMess = await i.reply({content: `Only the creator can close it ${process.env.NOPPERS_EMOJI}`, fetchReply: true})
@@ -202,14 +223,14 @@ export default openBet
 
 interface IManageUserBetReturn {
     outcomeIndex: number, 
-    errMessage: Message<boolean> | null
+    ubMessage: Message<boolean> | null
 }
 
 const manageUserBets = async (message: Message, currentBets: IUserBet[], outcomeMessages: Message<boolean>[], threadId: string): Promise<IManageUserBetReturn> => {
 
     if (!message.reference || !message.reference.messageId) {
         const errMes = await message.reply({content: `Reply to an outcome with # of points to bet ${process.env.NOPPERS_EMOJI}`})
-        return {outcomeIndex: -1, errMessage: errMes}
+        return {outcomeIndex: -1, ubMessage: errMes}
     }
  
     const outcomeIndex = outcomeMessages.findIndex(oM => message.reference && message.reference.messageId === oM.id)
@@ -218,22 +239,22 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
         const userMutex = userMutexes.get(message.author.id)
         if (!userMutex) {
             const genErr = await message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-            return {outcomeIndex: -1, errMessage: genErr}
+            return {outcomeIndex: -1, ubMessage: genErr}
         }
-        const returnVal: IManageUserBetReturn = {outcomeIndex: -1, errMessage: null}
+        const returnVal: IManageUserBetReturn = {outcomeIndex: -1, ubMessage: null}
         await userMutex.runExclusive(async() => {
             const user = await getUser(message.author.id)
             if (user) {
                 const points = message.content.toUpperCase() === 'ALL' ? user.points : Number(message.content)
                 if (!isValidNumberArg(points)) {
                     const errM = await message.reply({content: `${points === 0 ? 0 : message.content} ain a valid bet ${process.env.NOPPERS_EMOJI}`})
-                    returnVal.errMessage = errM
+                    returnVal.ubMessage = errM
                     return
                 }
 
                 if (points > user.points) {
                     const errM = await message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                    returnVal.errMessage = errM
+                    returnVal.ubMessage = errM
                     return
                 }
 
@@ -241,16 +262,18 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
                 if (userBet) {
                     if (userBet.outcome !== outcomeIndex) {
                         const errM = await message.reply({content: `You can only bet on one outcome ${process.env.NOPPERS_EMOJI}`})
-                        returnVal.errMessage = errM
+                        returnVal.ubMessage = errM
                         return
                     } else {
                         userBet.bet += points
-                        returnVal.outcomeIndex = outcomeIndex
                         await betModel.updateOne(
                             { threadId },
                             { $inc: { "userBets.$[user].bet": points } },
                             { arrayFilters: [{ "user.userId": {$eq: userBet.userId}}]}
                         )
+                        const newUser = await addPoints(message.author.id, -points)
+                        returnVal.ubMessage = await message.reply({content: `${points} more points bet on ${outcomeIndex+1}. You now have ${newUser.points} points`})
+                        returnVal.outcomeIndex = outcomeIndex
                         return
                     }
                 } else {
@@ -265,6 +288,8 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
                         { threadId },
                         { $push: { userBets: newUserBet } }
                     )
+                    const newUser = await addPoints(message.author.id, -points)
+                    returnVal.ubMessage = await message.reply({content: `${points} points bet on ${outcomeIndex+1}. You now have ${newUser.points} points`})
                     returnVal.outcomeIndex = outcomeIndex
                     return
                 }
@@ -274,5 +299,43 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
     }
 
     const errMes = await message.reply({content: `Reply to an outcome with # of points to bet ${process.env.NOPPERS_EMOJI}`})
-    return {outcomeIndex: -1, errMessage: errMes}
+    return {outcomeIndex: -1, ubMessage: errMes}
+}
+
+const editOutcomeMessages = (
+    userBets: IUserBet[], 
+    outcomeMessages: Message<boolean>[], 
+    outcomesLabels: string[],
+    numOutcomes: number
+) => {
+    const odds = getOdds(userBets, numOutcomes)
+    for(let i = 0; i < outcomeMessages.length; i++) {
+        const outcomeBets = userBets.filter(b => b.outcome === i)
+        const outcomeBetsFormatted = outcomeBets.map(obf => {
+            return `    <@${obf.userId}>: ${obf.bet}\n`
+        })
+        outcomeMessages[i].edit(
+            `\`\`\`${i + 1}) ${outcomesLabels[i]}\`\`\`${outcomeBetsFormatted.join('')}1 : ${(Math.round(odds[i] * 100) / 100).toFixed(2)}\n`)
+    }
+}
+
+const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: number, winningOutcome: number) => {
+    const bet = await getBet(thread.id)
+    const payouts = getPayouts(bet.userBets, numOutcomes, winningOutcome)
+
+    for (const payout of payouts) {
+        const userMutex = userMutexes.get(payout.userId)
+        if (!userMutex) {
+            return
+        }
+        await userMutex.runExclusive(async() => {
+            const user = await addPointsAndAccrue(payout.userId, payout.pointsToAdd)
+            if (payout.pointsToAdd < 0) {
+                await thread.send({content:`<@${user.id}> lost ${Math.abs(payout.pointsToAdd)} points ${process.env.SMODGE_EMOJI} and now has ${user.points} points`})
+            } else {
+                await thread.send({content:`<@${user.id}> won ${payout.pointsToAdd} points ${process.env.NICE_EMOJI} and now has ${user.points} points`})
+            }
+        }).catch(() => {})
+    }
+    await deleteBet(thread.id)
 }

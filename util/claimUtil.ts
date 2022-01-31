@@ -1,4 +1,5 @@
 import { Message } from "discord.js";
+import moment from "moment";
 import getUser, { addPoints, updateUser } from "./userUtil";
 
 export const claimDaily = async (id: string, message: Message<boolean>) => {
@@ -18,13 +19,10 @@ export const claimDaily = async (id: string, message: Message<boolean>) => {
 }
 
 export const claimWeekly = async (id: string, message: Message<boolean>) => {
-    const startDay = new Date()
-    startDay.setUTCHours(0,0,0,0)
-
-    let user = await getUser(id)
-
-    const startWeek = setToMonday(startDay);
+    const startWeek = moment().startOf('week').toDate();
     const nextWeek = new Date(startWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+    let user = await getUser(id)
+    
     if (!user.weeklyClaim || user.weeklyClaim === null || startWeek.getTime() > user.weeklyClaim.getTime()) {
         await addPoints(user.id, 120)
         user = await updateUser(id,{weeklyClaim: new Date(), pointsClaimed: user.pointsClaimed + 120})
@@ -32,12 +30,4 @@ export const claimWeekly = async (id: string, message: Message<boolean>) => {
     } else {
         message.reply({content: `Wait until ${nextWeek} ${process.env.NOPPERS_EMOJI}`})
     }
-}
-
-const setToMonday = (date: Date): Date => {
-    const day = date.getDay() || 7;  
-    if( day !== 1 ) {
-        date.setHours(-24 * (day - 1)); 
-    }
-    return date;
 }
