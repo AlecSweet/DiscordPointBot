@@ -45,17 +45,30 @@ const points: ICommand = {
             const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
             const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
 
+            const bpPF = (user.betsWon + user.betsLost) > 0 ? (Math.round(((user.betPointsLost + user.betPointsWon) / (user.betsWon + user.betsLost)) * 10) / 10).toFixed(1) : 0
+            const bpPL = user.betsLost > 0 ? (Math.round((user.betPointsLost / user.betsLost) * 10) / 10).toFixed(1) : 0
+            const bpPW = user.betsWon > 0 ? (Math.round((user.betPointsWon / user.betsWon) * 10) / 10).toFixed(1) : 0
+
             message.reply({content: 
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
 Points           ${user.points}
-Flips            ${user.flipsWon} Won / ${user.flipsLost} Lost
-Flip Returns     ${user.pointsWon} Points Won / ${user.pointsLost} Points Lost
+
+Points Earned    ${Math.floor(user.secondsActive/60)}
+Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Received
+Points Claimed   ${user.pointsClaimed} Claimed   
+
+Flips            ${user.flipsWon+user.flipsLost} Total / ${user.flipsWon} Won / ${user.flipsLost} Lost
+Flip Returns     ${user.pointsWon+user.pointsLost} Total / ${user.pointsWon} Points Won / ${user.pointsLost} Points Lost
 Avg Flips        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
 Max Flip Streak  ${user.maxWinStreak} Won / ${user.maxLossStreak} Lost
 Current Streak   ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
-Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Received
-Points Claimed   ${user.pointsClaimed} Claimed           
+
+Bets             ${user.betsWon+user.betsLost} Total / ${user.betsWon} Won / ${user.betsLost} Lost
+Bet Returns      ${user.betPointsWon+user.betPointsLost} Total / ${user.betPointsWon} Points Won / ${user.betPointsLost} Points Lost
+Avg Bets         ${bpPF} Avg Bet / ${bpPW} Avg Win / ${bpPL} Avg Loss
+Bets Opened      ${user.betsOpened}
+
 Active           ${days} days / ${hours} hours / ${minutes} minutes\`\`\``
             })
         }).catch(() => {})

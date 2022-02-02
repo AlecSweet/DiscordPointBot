@@ -29,6 +29,11 @@ const betSchema = new Schema({
         type: Number,
         required: true,
     },
+    startDate: {
+        type: Date,
+        default: new Date(),
+        required: true
+    },
     userBets: [{
         userId: {
             type: String,

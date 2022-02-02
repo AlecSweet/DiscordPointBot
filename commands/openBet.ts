@@ -3,7 +3,7 @@ import * as dotenv from "dotenv"
 import isValidNumberArg from "../util/isValidNumberArg";
 import betModel, { deleteBet, getBet, insertBet, IUserBet } from "../db/bet";
 import { Message, MessageSelectOptionData, ThreadChannel } from "discord.js";
-import getUser, { addPoints, addPointsAndAccrue } from "../util/userUtil";
+import getUser, { addPoints, addPointsAndAccrue, incUser } from "../util/userUtil";
 import { userMutexes } from "..";
 import { getOdds, getPayouts, returnPointsDeleteBet } from "../util/betUtil";
 dotenv.config()
@@ -47,9 +47,10 @@ const openBet: ICommand = {
 
         let question = ''
         const outcomeLabels: string[] = []
+        let maxOutcomeLabelLen = 0
 
         let intialCreationFailed = false
-        await message.reply({content: `Enter the bet question and each outcome serpartely in the next ${numOutcomes+1} messages`})
+        await message.reply({content: `Enter the bet question and each outcome separately in the next ${numOutcomes+1} messages`})
             .then(async () => {
                 await message.channel.awaitMessages({filter, max: 1+numOutcomes, time: 120000, errors: ['time']})
                     .then(collected => {
@@ -58,6 +59,7 @@ const openBet: ICommand = {
                             if (ind === 0) {
                                 question = m.content
                             } else {
+                                maxOutcomeLabelLen = m.content.length > maxOutcomeLabelLen ? m.content.length : maxOutcomeLabelLen
                                 outcomeLabels.push(m.content)
                             }
                             ind += 1
@@ -86,19 +88,19 @@ const openBet: ICommand = {
                     userBets: []
                 })
                 await threadChannel.send({
-                    content:`⠀\n${question}`
+                    content:`⠀\n${question}\n⠀`
                 })
                 const outcomeMessages: Message<boolean>[] = []
                 let index = 0
                 for (const outcome of outcomeLabels) {
                     const outcomeMessage = await threadChannel.send({
-                        content:`\`\`\`${index + 1}) ${outcome}\`\`\``
+                        content:`⠀  \`${index + 1}) ${outcome}\`\n⠀`
                     })
                     outcomeMessages.push(outcomeMessage)
                     index++
                 }
                 const betOverMessage = await threadChannel.send({
-                    content:`*ᴿᵉᵖˡʸ ᵗᵒ ᵃⁿʸ ᵒᵘᵗᶜᵒᵐᵉ ʷᶦᵗʰ # ᵒᶠ ᵖᵒᶦⁿᵗˢ\nʙᴇᴛᴛɪɴɢ ᴏᴠᴇʀ <t:${(Math.floor(new Date().getTime() / 1000) + (bettingMinutes * 60))}:R>`
+                    content:`Reply to an option with # of points to bet. You can add more points to your bet but you can't switch your choice.\n__Betting over__ <t:${(Math.floor(new Date().getTime() / 1000) + (bettingMinutes * 60))}:R>`
                 })
         
                 const collector = await threadChannel.createMessageCollector({ time: bettingMinutes * 60 * 1000});
@@ -109,7 +111,7 @@ const openBet: ICommand = {
                     const result = await manageUserBets(cMessage, userBets, outcomeMessages, threadChannel.id)
                     cMessage.delete()
                     if (result.outcomeIndex > -1) {
-                        editOutcomeMessages(userBets, outcomeMessages, outcomeLabels, numOutcomes)
+                        editOutcomeMessages(userBets, outcomeMessages, outcomeLabels, numOutcomes, maxOutcomeLabelLen)
                     }
 
                     if (result.ubMessage !== null) {
@@ -170,7 +172,7 @@ const openBet: ICommand = {
                                                     type: 3,
                                                     customId: 'outcomeSelectMenu',
                                                     options: selectMenuOptions,
-                                                    placeholder: 'Select Winning Outcome',
+                                                    placeholder: 'Select Winning Option',
                                                     minValues: 1,
                                                     maxValues: 1
                                                 }]
@@ -187,31 +189,29 @@ const openBet: ICommand = {
                                         ]
                                     })
                                 } else if (i.isButton()) {
-                                    collector.stop()
+                                    await collector.stop()
                                     if(selectedOutcome==-1){
-                                        i.update({
-                                            content: `⠀\nBet canceled ${process.env.SHRUGGERS_EMOJI} returning all points`, 
+                                        await i.update({
+                                            content: `⠀\nBet canceled ${process.env.SHRUGGERS_EMOJI} returning all points. Bet thread will be deleted in 30 seconds...`, 
                                             components: []
                                         })
                                         await returnPointsDeleteBet(threadChannel.id)
+                                        setTimeout(() => { threadChannel.delete() }, 30000)
                                     } else {
-                                        i.update({
+                                        await i.update({
                                             content: `⠀\nPaying out "${outcomeLabels[selectedOutcome]}" choosers...`, 
                                             components: []
                                         })
                                         await payoutPointsAndDeleteBet(threadChannel, numOutcomes, selectedOutcome)
-                                    }
-                                    //await threadChannel.send({content:`Archiving bet in 30 seconds...`})                      
-                                    //setTimeout(async () => { 
                                         await threadChannel.setArchived(true)
-                                    //}, 30000)
+                                        await incUser(message.author.id, {betsOpened: 1})
+                                    }
                                 }
                             } else {
                                 const errMess = await i.reply({content: `Only the creator can close it ${process.env.NOPPERS_EMOJI}`, fetchReply: true})
                                 setTimeout(() => { (errMess as Message).delete() }, 5000)
                             }
                         })
-                        collector.on('end', collected => console.log(`Collected ${collected.size} items`));
                     })
                 })
             })
@@ -229,7 +229,7 @@ interface IManageUserBetReturn {
 const manageUserBets = async (message: Message, currentBets: IUserBet[], outcomeMessages: Message<boolean>[], threadId: string): Promise<IManageUserBetReturn> => {
 
     if (!message.reference || !message.reference.messageId) {
-        const errMes = await message.reply({content: `Reply to an outcome with # of points to bet ${process.env.NOPPERS_EMOJI}`})
+        const errMes = await message.reply({content: `Reply to an option with # of points to bet ${process.env.NOPPERS_EMOJI}`})
         return {outcomeIndex: -1, ubMessage: errMes}
     }
  
@@ -261,7 +261,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
                 const userBet = currentBets.find(ub => ub.userId && ub.userId === message.author.id);
                 if (userBet) {
                     if (userBet.outcome !== outcomeIndex) {
-                        const errM = await message.reply({content: `You can only bet on one outcome ${process.env.NOPPERS_EMOJI}`})
+                        const errM = await message.reply({content: `You can only bet on one option ${process.env.NOPPERS_EMOJI}`})
                         returnVal.ubMessage = errM
                         return
                     } else {
@@ -298,7 +298,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
         return returnVal
     }
 
-    const errMes = await message.reply({content: `Reply to an outcome with # of points to bet ${process.env.NOPPERS_EMOJI}`})
+    const errMes = await message.reply({content: `Reply to an option with # of points to bet ${process.env.NOPPERS_EMOJI}`})
     return {outcomeIndex: -1, ubMessage: errMes}
 }
 
@@ -306,16 +306,18 @@ const editOutcomeMessages = (
     userBets: IUserBet[], 
     outcomeMessages: Message<boolean>[], 
     outcomesLabels: string[],
-    numOutcomes: number
+    numOutcomes: number,
+    maxOutcomeLabelLen: number
 ) => {
     const odds = getOdds(userBets, numOutcomes)
     for(let i = 0; i < outcomeMessages.length; i++) {
         const outcomeBets = userBets.filter(b => b.outcome === i)
         const outcomeBetsFormatted = outcomeBets.map(obf => {
-            return `    <@${obf.userId}>: ${obf.bet}\n`
+            return `⠀       __<@${obf.userId}>: ${obf.bet}__\n`
         })
+        const space = " ".repeat((maxOutcomeLabelLen - outcomesLabels[i].length) + 12);
         outcomeMessages[i].edit(
-            `\`\`\`${i + 1}) ${outcomesLabels[i]}\`\`\`${outcomeBetsFormatted.join('')}1 : ${(Math.round(odds[i] * 100) / 100).toFixed(2)}\n`)
+            `⠀  \`${i + 1}) ${outcomesLabels[i]}${space}1 : ${(Math.round(odds[i] * 100) / 100).toFixed(2)}\`\n${outcomeBetsFormatted.join('')}⠀`)
     }
 }
 
@@ -329,11 +331,20 @@ const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: numb
             return
         }
         await userMutex.runExclusive(async() => {
-            const user = await addPointsAndAccrue(payout.userId, payout.pointsToAdd)
-            if (payout.pointsToAdd < 0) {
-                await thread.send({content:`<@${user.id}> lost ${Math.abs(payout.pointsToAdd)} points ${process.env.SMODGE_EMOJI} and now has ${user.points} points`})
-            } else {
+            if (payout.won) {
+                const user = await addPointsAndAccrue(payout.userId, payout.pointsToAdd)
+                await incUser(payout.userId, {betsWon: 1, betPointsWon: Math.abs(payout.pointsToAdd)})
                 await thread.send({content:`<@${user.id}> won ${payout.pointsToAdd} points ${process.env.NICE_EMOJI} and now has ${user.points} points`})
+            } else {
+                if (payout.pointsBack) {
+                    const user = await addPointsAndAccrue(payout.userId, payout.pointsToAdd)
+                    await incUser(payout.userId, {betsLost: 1, betPointsLost: Math.abs(payout.pointsToAdd)})
+                    await thread.send({content:`<@${user.id}> got ${Math.abs(payout.pointsToAdd)} points back ${process.env.SMODGE_EMOJI} and now has ${user.points} points`})
+                } else {
+                    const user = await getUser(payout.userId)
+                    await incUser(payout.userId, {betsLost: 1, betPointsLost: Math.abs(payout.pointsToAdd)})
+                    await thread.send({content:`${process.env.SMODGE_EMOJI} <@${user.id}> lost it all and now has ${user.points} points`})
+                }
             }
         }).catch(() => {})
     }

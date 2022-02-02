@@ -73,11 +73,16 @@ export const getUserNoAccrue = async (id: string): Promise<IUser> => {
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
         pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed
+        pointsClaimed: userEntry.pointsClaimed,
+        betPointsWon: userEntry.betPointsWon,
+        betPointsLost: userEntry.betPointsLost,
+        betsWon: userEntry.betsWon,
+        betsLost: userEntry.betsLost,
+        betsOpened:  userEntry.betsOpened
     }
 }
 
-const incUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
+export const incUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
     const updateResult = await userModel.findOneAndUpdate({id}, {$inc: {...(updates)}}, {new: true})
     const userEntry = updateResult ? updateResult : await insertUser(id, updates)
     return {
@@ -97,7 +102,12 @@ const incUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
         pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed
+        pointsClaimed: userEntry.pointsClaimed,
+        betPointsWon: userEntry.betPointsWon,
+        betPointsLost: userEntry.betPointsLost,
+        betsWon: userEntry.betsWon,
+        betsLost: userEntry.betsLost,
+        betsOpened:  userEntry.betsOpened
     }
 }
 
@@ -121,7 +131,12 @@ export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUs
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
         pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed
+        pointsClaimed: userEntry.pointsClaimed,
+        betPointsWon: userEntry.betPointsWon,
+        betPointsLost: userEntry.betPointsLost,
+        betsWon: userEntry.betsWon,
+        betsLost: userEntry.betsLost,
+        betsOpened:  userEntry.betsOpened
     }
 }
 
@@ -144,6 +159,11 @@ const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> =>
         weeklyClaim: userEntry.weeklyClaim,
         pointsGiven: userEntry.pointsGiven,
         pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed
+        pointsClaimed: userEntry.pointsClaimed,
+        betPointsWon: userEntry.betPointsWon,
+        betPointsLost: userEntry.betPointsLost,
+        betsWon: userEntry.betsWon,
+        betsLost: userEntry.betsLost,
+        betsOpened:  userEntry.betsOpened
     }
 }

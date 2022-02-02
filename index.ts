@@ -6,6 +6,7 @@ import * as dotenv from "dotenv"
 import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
 import { CronJob } from 'cron';
 import { Mutex, MutexInterface, withTimeout } from "async-mutex";
+import { checkAndCancelMaroonedBets } from "./util/betUtil";
 dotenv.config()
 
 process.on('uncaughtException', (err) => {console.log(err)})
@@ -52,6 +53,7 @@ client.on('ready', async () => {
 
     const checkInactiveMembers = new CronJob('0 */5 * * * *', function() {
         checkInactivity(currentGuild)
+        checkAndCancelMaroonedBets(currentGuild)
     })
     checkInactiveMembers.start();
 })

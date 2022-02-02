@@ -7,8 +7,8 @@ enum LeaderboardTypes {
     flipslost = 'flipsLost',
     flipswon = 'flipsWon',
     pointsflipped = 'pointsFlipped',
-    pointswon = 'pointsWon',
-    pointslost = 'pointsLost',
+    flippointswon = 'pointsWon',
+    flippointslost = 'pointsLost',
     active = 'secondsActive',
     flips = 'flips',
     unluckiest = 'unluckiestFlipper',
@@ -20,7 +20,14 @@ enum LeaderboardTypes {
     winstreak = 'maxWinStreak',
     lossstreak = 'maxLossStreak',
     highroller = 'highRoller',
-    pointsclaimed = 'pointsClaimed'
+    pointsclaimed = 'pointsClaimed',
+    betpointswon = 'betPointsWon',
+    betpointslost = 'betPointsLost',
+    pointsbet = 'pointsBet',
+    betswon = 'betsWon',
+    betslost = 'betsLost',
+    bets = 'bets',
+    betsopened = 'betsOpened',
 }
 
 enum LeaderboardTitles {
@@ -35,13 +42,20 @@ enum LeaderboardTitles {
     luckiestFlipper = '(*Min 5 Flips*) Flip Win Rate Top',
     worstFlipper = '(*Min 3W and 3L*) Avg PointsPerWin / Avg PointsPerLoss Bottom',
     bestFlipper = '(*Min 3W and 3L*) Avg PointsPerWin / Avg PointsPerLoss Top',
-    pointsFlipped = 'Total Points Bet on Flips Top',
+    pointsFlipped = 'Total Points Flipped Top',
     pointsGiven = 'Points Given Top',
     pointsRecieved = 'Points Recieved Top',
     maxWinStreak = 'Max Win Streak Top',
     maxLossStreak = 'Max Loss Streak Top',
     highRoller = 'Flip Average Bet',
-    pointsClaimed = 'Points Claimed Top'
+    pointsClaimed = 'Points Claimed Top',
+    betPointsWon = 'Points Won On Bets Top',
+    betPointsLost = 'Points Lost On Bets Top',
+    pointsBet = 'Total Points Bet Top',
+    betsWon = 'Bets Won Top',
+    betsLost = 'Bets Lost Top',
+    bets = 'Total Bets Played In Top',
+    betsOpened = 'Bets Opened Top'
 }
 
 
@@ -102,6 +116,19 @@ const leaderboardAggregates = {
         {$sort: {avgPPB:-1}},
     ],
     pointsClaimed: [{$match: { pointsClaimed: {$gt: 0}}}, {$sort:{pointsClaimed:-1}}],
+    betPointsWon: [{$sort:{betPointsWon:-1}}],
+    betPointsLost: [{$sort:{betPointsLost:-1}}],
+    pointsBet: [
+        {$addFields: { pointsBet: { $add: [ "$betPointsWon", "$betPointsLost"]}}},
+        {$sort: {pointsBet:-1}},
+    ],
+    betsWon: [{$sort:{betsWon:-1}}],
+    betsLost: [{$sort:{betsLost:-1}}],
+    bets: [
+        {$addFields: { bets: { $add: [ "$betsWon", "$betsLost"]}}},
+        {$sort: {bets:-1}},
+    ],
+    betsOpened: [{$match: { betsOpened: {$gt: 0}}}, {$sort:{betsOpened:-1}}]
 }
 
 const leaderboard: ICommand = {
