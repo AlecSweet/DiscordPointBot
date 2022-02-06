@@ -132,11 +132,15 @@ export const getPayouts = (userBets: IUserBet[], numOutcomes: number, winningOut
 export const checkAndCancelMaroonedBets = async (guild: Guild) => {
     const bets = await betModel.find({})
     if (bets) {
-        bets.forEach(async bet => {
+        await bets.forEach(async bet => {
             if ((new Date()).getTime() - bet.startDate.getTime() > 4 * 60 * 60 * 1000) {
+
+                console.log((new Date()).getTime(), 'currentTime')
+                console.log(bet.startDate.getTime(), 'betTIme')
                 const activeThreads = await guild.channels.fetchActiveThreads()
                 const betThread = activeThreads.threads.find(thread => thread.id === bet.threadId)
                 if (betThread) {
+                    console.log('deleting bet from check maroon')
                     await betThread.delete()
                 }
             

@@ -17,7 +17,6 @@ const openBet: ICommand = {
     minArgs: 2,
     maxArgs: 2,
     cooldown: '3s',
-    ownerOnly: true,
     callback: async (options: ICallback) => {
         const { client, message, args } = options
 
@@ -65,27 +64,28 @@ const openBet: ICommand = {
                             ind += 1
                         })
                     })
-                    .catch(() => {
+                    .catch((err) => {
+                        console.log(err)
                         intialCreationFailed = true
                         message.reply({content:`Bet creation timed out ${process.env.NOPPERS_EMOJI}. Type faster`});
                     });
-            })
+            }).catch((err) => console.log(err))
         if (intialCreationFailed) { return }
 
         const userBets: IUserBet[] = []
-        message.channel.threads
+        await message.channel.threads
             .create({
                 name: `${message.author.username}'s Bet`,
                 autoArchiveDuration: 1440,
                 reason: 'a fucking bet',
                 rateLimitPerUser: 3
-            })
-            .then(async threadChannel => {
-                insertBet({
+            }).then(async threadChannel => {
+                await insertBet({
                     ownerId: message.author.id,
                     threadId: threadChannel.id,
                     numOutcomes: numOutcomes,
-                    userBets: []
+                    startDate: (new Date()),
+                    userBets: [],
                 })
                 await threadChannel.send({
                     content:`⠀\n${question}\n⠀`
@@ -109,15 +109,15 @@ const openBet: ICommand = {
                     if (client.user && client.user.id === cMessage.author.id){ return }
 
                     const result = await manageUserBets(cMessage, userBets, outcomeMessages, threadChannel.id)
-                    cMessage.delete()
+                    await cMessage.delete().catch((err) => console.log(err))
                     if (result.outcomeIndex > -1) {
-                        editOutcomeMessages(userBets, outcomeMessages, outcomeLabels, numOutcomes, maxOutcomeLabelLen)
+                        await editOutcomeMessages(userBets, outcomeMessages, outcomeLabels, numOutcomes, maxOutcomeLabelLen)
                     }
 
                     if (result.ubMessage !== null) {
-                        setTimeout(() => { 
+                        setTimeout(async () => { 
                             if(result.ubMessage !== null) {
-                                result.ubMessage.delete()
+                                await result.ubMessage.delete().catch((err) => console.log(err))
                             }
                         }, 5000)
                     }
@@ -149,21 +149,25 @@ const openBet: ICommand = {
                                     maxValues: 1
                                 }]
                             }]
-                        })
+                        }).catch((err) => console.log(err))
+
                         const filter = (interaction) => {
                             return interaction.customId === 'outcomeSelectMenu' || interaction.customId === 'closeBetButton'
                         }
 
-                        const collector = betOverMessage.createMessageComponentCollector({ filter, time: 2 * 60 * 60 * 1000 })
                         let selectedOutcome = -1
-                        collector.on('collect', async i => {
+                        let betTimedOut = true
+
+                        const endCollector = betOverMessage.createMessageComponentCollector({ filter, time: 3 * 60 * 60 * 1000 })
+
+                        endCollector.on('collect', async i => {
                             if (i.user.id === message.author.id) {
                                 if (i.isSelectMenu()) {
                                     selectedOutcome = Number(i.values[0])
                                     const buttonMessage = selectedOutcome < 0 ? 
                                         'Cancel Bet and Return Points' :
                                         `Pay Out "${outcomeLabels[selectedOutcome]}" choosers`
-                                    i.update({
+                                    await i.update({
                                         content: `⠀\nBetting over. Close the bet when ready.`, 
                                         components: [
                                             {
@@ -187,35 +191,43 @@ const openBet: ICommand = {
                                                 }]
                                             }
                                         ]
-                                    })
-                                } else if (i.isButton()) {
-                                    await collector.stop()
+                                    }).catch((err) => console.log(err))
+                                } else if (i.isButton()) {    
+                                    betTimedOut = false
+                                    collector.stop()
                                     if(selectedOutcome==-1){
                                         await i.update({
                                             content: `⠀\nBet canceled ${process.env.SHRUGGERS_EMOJI} returning all points. Bet thread will be deleted in 30 seconds...`, 
                                             components: []
-                                        })
+                                        }).catch((err) => console.log(err))
+                                        console.log("deleting bet from selectedOutcome")
                                         await returnPointsDeleteBet(threadChannel.id)
-                                        setTimeout(() => { threadChannel.delete() }, 30000)
+                                        setTimeout(async () => { await threadChannel.delete() }, 30000)
                                     } else {
                                         await i.update({
                                             content: `⠀\nPaying out "${outcomeLabels[selectedOutcome]}" choosers...`, 
                                             components: []
-                                        })
+                                        }).catch((err) => console.log(err))
                                         await payoutPointsAndDeleteBet(threadChannel, numOutcomes, selectedOutcome)
-                                        await threadChannel.setArchived(true)
                                         await incUser(message.author.id, {betsOpened: 1})
+                                        await threadChannel.setArchived(true).catch((err) => console.log(err))
                                     }
+                                    collector.stop()
                                 }
                             } else {
-                                const errMess = await i.reply({content: `Only the creator can close it ${process.env.NOPPERS_EMOJI}`, fetchReply: true})
-                                setTimeout(() => { (errMess as Message).delete() }, 5000)
+                                const errMess = await i.reply({content: `Only the creator can close it ${process.env.NOPPERS_EMOJI}`, fetchReply: true}).catch((err) => console.log(err))
+                                setTimeout(async () => { await (errMess as Message).delete().catch((err) => console.log(err)) }, 5000)
                             }
                         })
-                    })
+
+                        endCollector.on('collect', async i => {
+                            if (betTimedOut) {
+                                betOverMessage.edit({content: 'Timed out after 3 hours. Bet thread will be deleted and bets will be returned in about an hour.'})
+                            }
+                        })
+                    }).catch((err) => console.log(err))
                 })
-            })
-            .catch(console.error)
+            }).catch((err) => console.log(err))
     }
 }
 
@@ -247,22 +259,19 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
             if (user) {
                 const points = message.content.toUpperCase() === 'ALL' ? user.points : Number(message.content)
                 if (!isValidNumberArg(points)) {
-                    const errM = await message.reply({content: `${points === 0 ? 0 : message.content} ain a valid bet ${process.env.NOPPERS_EMOJI}`})
-                    returnVal.ubMessage = errM
+                    returnVal.ubMessage = await message.reply({content: `${points === 0 ? 0 : message.content} ain a valid bet ${process.env.NOPPERS_EMOJI}`})                
                     return
                 }
 
                 if (points > user.points) {
-                    const errM = await message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                    returnVal.ubMessage = errM
+                    returnVal.ubMessage = await message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
                     return
                 }
 
                 const userBet = currentBets.find(ub => ub.userId && ub.userId === message.author.id);
                 if (userBet) {
                     if (userBet.outcome !== outcomeIndex) {
-                        const errM = await message.reply({content: `You can only bet on one option ${process.env.NOPPERS_EMOJI}`})
-                        returnVal.ubMessage = errM
+                        returnVal.ubMessage = await message.reply({content: `You can only bet on one option ${process.env.NOPPERS_EMOJI}`})
                         return
                     } else {
                         userBet.bet += points
@@ -294,7 +303,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
                     return
                 }
             }
-        }).catch(() => {})
+        }).catch((err) => console.log(err))
         return returnVal
     }
 
@@ -302,7 +311,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
     return {outcomeIndex: -1, ubMessage: errMes}
 }
 
-const editOutcomeMessages = (
+const editOutcomeMessages = async (
     userBets: IUserBet[], 
     outcomeMessages: Message<boolean>[], 
     outcomesLabels: string[],
@@ -316,7 +325,7 @@ const editOutcomeMessages = (
             return `⠀       __<@${obf.userId}>: ${obf.bet}__\n`
         })
         const space = " ".repeat((maxOutcomeLabelLen - outcomesLabels[i].length) + 12);
-        outcomeMessages[i].edit(
+        await outcomeMessages[i].edit(
             `⠀  \`${i + 1}) ${outcomesLabels[i]}${space}1 : ${(Math.round(odds[i] * 100) / 100).toFixed(2)}\`\n${outcomeBetsFormatted.join('')}⠀`)
     }
 }
@@ -346,7 +355,7 @@ const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: numb
                     await thread.send({content:`${process.env.SMODGE_EMOJI} <@${user.id}> lost it all and now has ${user.points} points`})
                 }
             }
-        }).catch(() => {})
+        }).catch((err) => {console.log(err)})
     }
     await deleteBet(thread.id)
 }

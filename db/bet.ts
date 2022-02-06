@@ -14,6 +14,7 @@ export interface IBet {
     threadId: string
     numOutcomes: number
     userBets: IUserBet[]
+    startDate: Date
 }
 
 const betSchema = new Schema({

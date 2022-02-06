@@ -7,7 +7,7 @@ dotenv.config()
 
 const flip: ICommand = {
     name: 'flip',
-    aliases: ['f','filp','fipl','lipf','pilf','fpil'],
+    aliases: ['f','filp','fipl','lipf','pilf','fpil', 'phillip', 'fip', 'ipfl', 'iflp'],
     category: 'gambling',
     description: 'lose some points',
     expectedArgs: '<# of points to lose>',

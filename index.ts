@@ -7,6 +7,7 @@ import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
 import { CronJob } from 'cron';
 import { Mutex, MutexInterface, withTimeout } from "async-mutex";
 import { checkAndCancelMaroonedBets } from "./util/betUtil";
+import { checkAndCancelMaroonedChallenges } from "./util/challengeUtil";
 dotenv.config()
 
 process.on('uncaughtException', (err) => {console.log(err)})
@@ -51,9 +52,10 @@ client.on('ready', async () => {
         botOwners: `${process.env.BOT_OWNER}`
     })
 
-    const checkInactiveMembers = new CronJob('0 */5 * * * *', function() {
-        checkInactivity(currentGuild)
-        checkAndCancelMaroonedBets(currentGuild)
+    const checkInactiveMembers = new CronJob('0 */5 * * * *', async function() {
+        await checkInactivity(currentGuild)
+        await checkAndCancelMaroonedBets(currentGuild)
+        await checkAndCancelMaroonedChallenges()
     })
     checkInactiveMembers.start();
 })

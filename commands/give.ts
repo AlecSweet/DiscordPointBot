@@ -1,7 +1,7 @@
 import { userMutexes } from "..";
 import isValidNumberArg from "../util/isValidNumberArg";
 import isValidUserArg from "../util/isValidUserArg";
-import getUser, { addPoints, updateUser } from "../util/userUtil";
+import getUser, { addPoints, incUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const give: ICommand = {
@@ -58,7 +58,7 @@ const give: ICommand = {
             }
 
             const author = await addPoints(user.id, -points)
-            await updateUser(author.id, {pointsGiven: author.pointsGiven + points})
+            await incUser(author.id, {pointsGiven: points})
             message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
         }).then(() => {
             if(!failed) {
@@ -69,7 +69,7 @@ const give: ICommand = {
                 }
                 gifteeMutex.runExclusive(async() => {
                     const giftee = await addPoints(gifteeId, points)
-                    await updateUser(giftee.id, {pointsRecieved: giftee.pointsRecieved + points})
+                    await incUser(giftee.id, {pointsRecieved: points})
                 }).catch(() => {})
             }
         }).catch(() => {})
