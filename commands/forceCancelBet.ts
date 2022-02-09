@@ -3,8 +3,8 @@ import { returnPointsDeleteBet } from "../util/betUtil";
 import { ICallback, ICommand } from "../wokTypes";
 
 const forceCancelBet: ICommand = {
-    name: 'cancelBet',
-    aliases: ['closeBet'],
+    name: 'forceCancelBet',
+    aliases: ['forceCloseBet'],
     category: 'force cancel bet',
     description: 'force cancel bet',
     cooldown: '3s',

@@ -78,7 +78,15 @@ export const getUserNoAccrue = async (id: string): Promise<IUser> => {
         betPointsLost: userEntry.betPointsLost,
         betsWon: userEntry.betsWon,
         betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened
+        betsOpened:  userEntry.betsOpened,
+        challengePointsWon: userEntry.challengePointsWon,
+        challengePointsLost: userEntry.challengePointsLost,
+        challengesWon: userEntry.challengesWon,
+        challengesLost: userEntry.challengesLost,
+        warPointsWon: userEntry.warPointsWon,
+        warPointsLost: userEntry.warPointsLost,
+        warsWon:userEntry.warsWon,
+        warsLost: userEntry.warsLost,
     }
 }
 
@@ -107,7 +115,15 @@ export const incUser = async (id: string, updates: IUserUpdates): Promise<IUser>
         betPointsLost: userEntry.betPointsLost,
         betsWon: userEntry.betsWon,
         betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened
+        betsOpened:  userEntry.betsOpened,
+        challengePointsWon: userEntry.challengePointsWon,
+        challengePointsLost: userEntry.challengePointsLost,
+        challengesWon: userEntry.challengesWon,
+        challengesLost: userEntry.challengesLost,
+        warPointsWon: userEntry.warPointsWon,
+        warPointsLost: userEntry.warPointsLost,
+        warsWon:userEntry.warsWon,
+        warsLost: userEntry.warsLost,
     }
 }
 
@@ -136,7 +152,15 @@ export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUs
         betPointsLost: userEntry.betPointsLost,
         betsWon: userEntry.betsWon,
         betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened
+        betsOpened:  userEntry.betsOpened,
+        challengePointsWon: userEntry.challengePointsWon,
+        challengePointsLost: userEntry.challengePointsLost,
+        challengesWon: userEntry.challengesWon,
+        challengesLost: userEntry.challengesLost,
+        warPointsWon: userEntry.warPointsWon,
+        warPointsLost: userEntry.warPointsLost,
+        warsWon:userEntry.warsWon,
+        warsLost: userEntry.warsLost,
     }
 }
 
@@ -164,6 +188,14 @@ const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> =>
         betPointsLost: userEntry.betPointsLost,
         betsWon: userEntry.betsWon,
         betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened
+        betsOpened:  userEntry.betsOpened,
+        challengePointsWon: userEntry.challengePointsWon,
+        challengePointsLost: userEntry.challengePointsLost,
+        challengesWon: userEntry.challengesWon,
+        challengesLost: userEntry.challengesLost,
+        warPointsWon: userEntry.warPointsWon,
+        warPointsLost: userEntry.warPointsLost,
+        warsWon:userEntry.warsWon,
+        warsLost: userEntry.warsLost,
     }
 }

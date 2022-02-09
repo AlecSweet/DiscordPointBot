@@ -49,27 +49,43 @@ const points: ICommand = {
             const bpPL = user.betsLost > 0 ? (Math.round((user.betPointsLost / user.betsLost) * 10) / 10).toFixed(1) : 0
             const bpPW = user.betsWon > 0 ? (Math.round((user.betPointsWon / user.betsWon) * 10) / 10).toFixed(1) : 0
 
+            const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
+            const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
+            const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
+
+            const wpPF = (user.warsWon + user.warsLost) > 0 ? (Math.round(((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost)) * 10) / 10).toFixed(1) : 0
+            const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
+            const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
+
             message.reply({content: 
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
-Points           ${user.points}
+Points          ${user.points}
+Active          ${days} days / ${hours} hours / ${minutes} minutes
 
-Points Earned    ${Math.floor(user.secondsActive/60)}
-Point Gifts      ${user.pointsGiven} Given / ${user.pointsRecieved} Received
-Points Claimed   ${user.pointsClaimed} Claimed   
+Points Earned   ${Math.floor(user.secondsActive/60)}
+Point Gifts     ${user.pointsGiven} Given / ${user.pointsRecieved} Received
+Points Claimed  ${user.pointsClaimed} Claimed   
 
-Flips            ${user.flipsWon+user.flipsLost} Total / ${user.flipsWon} Won / ${user.flipsLost} Lost
-Flip Returns     ${user.pointsWon+user.pointsLost} Total / ${user.pointsWon} Points Won / ${user.pointsLost} Points Lost
-Avg Flips        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
-Max Flip Streak  ${user.maxWinStreak} Won / ${user.maxLossStreak} Lost
-Current Streak   ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
+Bets            ${user.betsWon+user.betsLost} Total / ${user.betsWon} Won / ${user.betsLost} Lost
+Returns         ${user.betPointsWon+user.betPointsLost} Total / ${user.betPointsWon} Won / ${user.betPointsLost} Lost
+Avg Bets        ${bpPF} Avg Bet / ${bpPW} Avg Win / ${bpPL} Avg Loss
+Bets Opened     ${user.betsOpened}
 
-Bets             ${user.betsWon+user.betsLost} Total / ${user.betsWon} Won / ${user.betsLost} Lost
-Bet Returns      ${user.betPointsWon+user.betPointsLost} Total / ${user.betPointsWon} Points Won / ${user.betPointsLost} Points Lost
-Avg Bets         ${bpPF} Avg Bet / ${bpPW} Avg Win / ${bpPL} Avg Loss
-Bets Opened      ${user.betsOpened}
+Flips           ${user.flipsWon+user.flipsLost} Total / ${user.flipsWon} Won / ${user.flipsLost} Lost
+Returns         ${user.pointsWon+user.pointsLost} Total / ${user.pointsWon} Won / ${user.pointsLost} Lost
+Avg Bets        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
+Max Streak      ${user.maxWinStreak} Won / ${user.maxLossStreak} Lost
+Current Streak  ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
 
-Active           ${days} days / ${hours} hours / ${minutes} minutes\`\`\``
+Challenges      ${user.challengesWon+user.challengesLost} Total / ${user.challengesWon} Won / ${user.challengesLost} Lost
+Returns         ${user.challengePointsWon+user.challengePointsLost} Total / ${user.challengePointsWon} Won / ${user.challengePointsLost} Lost
+Avg Bets        ${cpPF} Avg Bet / ${cpPW} Avg Win / ${cpPL} Avg Loss
+
+War             ${user.warsWon+user.warsLost} Total / ${user.warsWon} Won / ${user.warsLost} Lost
+Returns         ${user.warPointsWon+user.warPointsLost} Total / ${user.warPointsWon} Won / ${user.warPointsLost} Lost
+Avg Bets        ${wpPF} Avg Bet / ${wpPW} Avg Win / ${wpPL} Avg Loss
+\`\`\``
             })
         }).catch(() => {})
     }

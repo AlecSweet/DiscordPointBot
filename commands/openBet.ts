@@ -37,7 +37,7 @@ const openBet: ICommand = {
         }
 
         const bettingMinutes = Number(args[1])
-        if (!isValidNumberArg(numOutcomes)) {
+        if (!isValidNumberArg(bettingMinutes)) {
             message.reply({content: `${args[1]} ain a valid number of minutes ${process.env.NOPPERS_EMOJI}`})
             return
         }
@@ -343,7 +343,7 @@ const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: numb
             if (payout.won) {
                 const user = await addPointsAndAccrue(payout.userId, payout.pointsToAdd)
                 await incUser(payout.userId, {betsWon: 1, betPointsWon: Math.abs(payout.pointsToAdd)})
-                await thread.send({content:`<@${user.id}> won ${payout.pointsToAdd} points ${process.env.NICE_EMOJI} and now has ${user.points} points`})
+                await thread.send({content:`<@${user.id}> won ${payout.pointsToAdd - payout.bet} points ${process.env.NICE_EMOJI} and now has ${user.points} points`})
             } else {
                 if (payout.pointsBack) {
                     const user = await addPointsAndAccrue(payout.userId, payout.pointsToAdd)
@@ -352,7 +352,7 @@ const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: numb
                 } else {
                     const user = await getUser(payout.userId)
                     await incUser(payout.userId, {betsLost: 1, betPointsLost: Math.abs(payout.pointsToAdd)})
-                    await thread.send({content:`${process.env.SMODGE_EMOJI} <@${user.id}> lost it all and now has ${user.points} points`})
+                    await thread.send({content:`<@${user.id}> lost it all and now has ${user.points} points ${process.env.SMODGE_EMOJI}`})
                 }
             }
         }).catch((err) => {console.log(err)})

@@ -19,7 +19,7 @@ export interface IChallengeRet {
     startDate: Date
 }
 
-const betSchema = new Schema({
+const challengeSchema = new Schema({
     ownerId: {
         type: String,
         required: true,
@@ -44,7 +44,7 @@ const betSchema = new Schema({
     }
 });
 
-const challengeModel = model['challenge'] || model('challenge', betSchema);
+const challengeModel = model['challenge'] || model('challenge', challengeSchema);
 
 export default challengeModel
 

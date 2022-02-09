@@ -25,6 +25,14 @@ export interface IUser {
     betsWon: number
     betsLost: number
     betsOpened: number
+    challengePointsWon: number
+    challengePointsLost: number
+    challengesWon: number
+    challengesLost: number
+    warPointsWon: number
+    warPointsLost: number
+    warsWon: number
+    warsLost: number
 }
 
 export interface IUserUpdates {
@@ -49,6 +57,14 @@ export interface IUserUpdates {
     betsWon?: number
     betsLost?: number
     betsOpened?:  number
+    challengePointsWon?: number
+    challengePointsLost?: number
+    challengesWon?: number
+    challengesLost?: number
+    warPointsWon?: number
+    warPointsLost?: number
+    warsWon?: number
+    warsLost?: number
 }
 
 const userSchema = new Schema({
@@ -139,7 +155,39 @@ const userSchema = new Schema({
     betsOpened: {
         type: Number,
         default: 0
-    }
+    },
+    challengePointsWon: {
+        type: Number,
+        default: 0
+    },
+    challengePointsLost: {
+        type: Number,
+        default: 0
+    },
+    challengesWon: {
+        type: Number,
+        default: 0
+    },
+    challengesLost: {
+        type: Number,
+        default: 0
+    },
+    warPointsWon: {
+        type: Number,
+        default: 0
+    },
+    warPointsLost: {
+        type: Number,
+        default: 0
+    },
+    warsWon: {
+        type: Number,
+        default: 0
+    },
+    warsLost: {
+        type: Number,
+        default: 0
+    },
 })
 
 const userModel = model['user'] || model('user', userSchema);

@@ -28,7 +28,7 @@ const challenge: ICommand = {
 
         let targetId = ''
         let filter = (i): boolean => {
-            return true
+            return i.user.id !== message.author.id
         }
         if (args[1]) {
             targetId = args[1].replace(/\D/g,'')
@@ -43,7 +43,7 @@ const challenge: ICommand = {
             }
 
             filter = (i): boolean => {
-                return i.user.id === targetId
+                return i.user.id === targetId && i.user.id !== message.author.id
             }
         }
 
@@ -119,9 +119,10 @@ const challenge: ICommand = {
                     i.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
                     return
                 }
-
-                targetMutex.runExclusive(async() => {
-                    const targetUser = await getUser(i.user.id)
+                let targetUser
+                let acceptBet
+                await targetMutex.runExclusive(async() => {
+                    targetUser = await getUser(i.user.id)
                     if (targetUser.points < 1) {
                         await i.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
                         return
@@ -132,40 +133,43 @@ const challenge: ICommand = {
                         return
                     }
                     
-                    const acceptBet = targetId === '' || targetUser.points >= challengePoints ? 
+                    acceptBet = targetId === '' || targetUser.points >= challengePoints ? 
                             challengePoints : 
                             targetUser.points
 
 
                     if(acceptBet < challengePoints){
                         await incUser(message.author.id, {points: challengePoints - acceptBet})
-                        await updateChallenge(message.author.id, {ownerBet: acceptBet, acceptId: targetId, acceptBet })
+                        await updateChallenge(message.author.id, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet })
                     } else {
-                        await updateChallenge(message.author.id, {acceptId: targetId, acceptBet })
+                        await updateChallenge(message.author.id, {acceptId: targetUser.id, acceptBet })
                     }
                     await incUser(targetUser.id, {points: -acceptBet})
-
-                    await challengeMessage.edit({
-                        content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetId}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}.`, 
-                        components: []
-                    })
-
-                    const acceptMessage = await challengeMessage.channel.send({
-                        content: `Challenge accepted by <@${targetUser.id}> ${acceptBet} for points ${process.env.PEPO_SMASH_EMOJI}`, 
-                    })
-                    await Promise.all([
-                        [
-                            await acceptMessage.react('3️⃣'), 
-                            await acceptMessage.react('2️⃣'), 
-                            await acceptMessage.react('1️⃣'),
-                            setTimeout(() => {finishBet(acceptBet, acceptMessage, targetUser.id, message.author.id)}, 400)
-                        ],
-                        await new Promise(resolve => setTimeout(resolve, 400))
-                    ]);
-
-                    canceled = false
-                    challengeCollector.stop()
                 }).catch((err) => console.log(err))
+
+                if (!acceptBet) {
+                    return
+                }
+                canceled = false
+                challengeCollector.stop()
+
+                await challengeMessage.edit({
+                    content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetUser.id}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}.`, 
+                    components: []
+                })
+
+                const acceptMessage = await challengeMessage.channel.send({
+                    content: `Challenge accepted by <@${targetUser.id}> for ${acceptBet} points ${process.env.PEPO_SMASH_EMOJI}`, 
+                })
+                await Promise.all([
+                    [
+                        await acceptMessage.react('3️⃣'), 
+                        await acceptMessage.react('2️⃣'), 
+                        await acceptMessage.react('1️⃣'),
+                        setTimeout(() => {finishBet(acceptBet, acceptMessage, targetUser.id, message.author.id)}, 400)
+                    ],
+                    await new Promise(resolve => setTimeout(resolve, 400))
+                ]);
             }).catch((err) => console.log(err))
         })
 
@@ -186,16 +190,19 @@ export default challenge
 const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, targetId: string, ownerId: string): Promise<boolean> => {
     const arr = new Uint8Array(1);
     getRandomValues(arr);
+    
     if(arr[0] < 128) {
         await acceptMessage.channel.send({
             content: `<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         })
-        await incUser(ownerId, {points: acceptBet*2})
+        await incUser(ownerId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
+        await incUser(targetId, {challengePointsLost: acceptBet, challengesLost: 1})
     } else {
         await acceptMessage.channel.send({
             content: `<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         })
-        await incUser(targetId, {points: acceptBet*2})
+        await incUser(targetId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
+        await incUser(ownerId, {challengePointsLost: acceptBet, challengesLost: 1})
     }
     await deleteChallenge(ownerId)
     return true
