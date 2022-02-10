@@ -30,13 +30,13 @@ enum LeaderboardTypes {
     betsopened = 'betsOpened',
     warpointswon= 'warPointsWon', 
     warpointslost= 'warPointsLost', 
-    pointswar= 'pointsWar', 
+    pointswarred= 'pointsWarred', 
     warswon= 'warsWon', 
     warslost= 'warsLost', 
     wars= 'wars', 
     challengepointswon= 'challengePointsWon', 
     challengepointslost= 'challengePointsLost', 
-    pointschallenge= 'pointsChallenge', 
+    pointschallenged= 'pointsChallenged', 
     challengeswon= 'challengesWon', 
     challengeslost= 'challengesLost', 
     challenges= 'challenges', 
@@ -70,13 +70,13 @@ enum LeaderboardTitles {
     betsOpened = 'Bets Opened Top',
     challengePointsWon = 'Points Won On Challenges Top',
     challengePointsLost = 'Points Lost On Challenges Top',
-    pointsChallenge = 'Total Points Bet on Challenges Top',
+    pointsChallenged = 'Total Points Bet on Challenges Top',
     challengesWon = 'Challenges Won Top',
     challengesLost = 'Challenges Lost Top',
     challenges = 'Total Challenges Played In Top',
     warPointsWon = 'Points Won On Wars Top',
     warPointsLost = 'Points Lost On Wars Top',
-    pointsWar = 'Total Points Bet on Wars Top',
+    pointsWarred = 'Total Points Bet on Wars Top',
     warsWon = 'Wars Won Top',
     warsLost = 'Wars Lost Top',
     wars = 'Total Wars Played In Top',
@@ -155,9 +155,9 @@ const leaderboardAggregates = {
     betsOpened: [{$match: { betsOpened: {$gt: 0}}}, {$sort:{betsOpened:-1}}],
     warPointsWon: [{$sort:{warPointsWon:-1}}],
     warPointsLost: [{$sort:{warPointsLost:-1}}],
-    pointsWar: [
-        {$addFields: { pointsBet: { $add: [ "$warPointsWon", "$warPointsLost"]}}},
-        {$sort: {pointsBet:-1}},
+    pointsWarred: [
+        {$addFields: { pointsWarred: { $add: [ "$warPointsWon", "$warPointsLost"]}}},
+        {$sort: {pointsWarred:-1}},
     ],
     warsWon: [{$sort:{warsWon:-1}}],
     warsLost: [{$sort:{warsLost:-1}}],
@@ -167,16 +167,16 @@ const leaderboardAggregates = {
     ],
     challengePointsWon: [{$sort:{challengePointsWon:-1}}],
     challengePointsLost: [{$sort:{challengePointsLost:-1}}],
-    pointsChallenge: [
-        {$addFields: { pointsBet: { $add: [ "$challengePointsWon", "$challengePointsLost"]}}},
-        {$sort: {pointsBet:-1}},
+    pointsChallenged: [
+        {$addFields: { pointsChallenged: { $add: [ "$challengePointsWon", "$challengePointsLost"]}}},
+        {$sort: {pointsChallenged:-1}},
     ],
     challengesWon: [{$sort:{challengesWon:-1}}],
     challengesLost: [{$sort:{challengesLost:-1}}],
     challenges: [
         {$addFields: { challenges: { $add: [ "$challengesWon", "$challengesLost"]}}},
         {$sort: {challenges:-1}},
-    ]
+    ],
 }
 
 const leaderboard: ICommand = {
@@ -202,7 +202,25 @@ const leaderboard: ICommand = {
             for (const e in LeaderboardTypes) {
                 validTypes.push(e)
             }
-            message.reply({content: `Use !top <leaderboard type> <optional # of users[1-20]>\nLeadboard Types: \n\`\`\`${validTypes.join(', ')}\`\`\``})
+            message.reply({content: 
+`Use !top <leaderboard type> <optional # of users[1-20]>
+\`\`\`
+Leadboard Types:
+
+Points          Flips            Challenges
+Active          FlipsWon         ChallengesWon
+Given           FlipsLost        ChallengesLost
+Received        FlipPointsWon    ChallengePointsWon
+PointsClaimed   FlipPointsLost   ChallengePointsLost
+                PointsFlipped    PointsChallenged
+Bets            Unluckiest
+BetsWon         Luckiest         Wars
+BetsLost        WorstFlipper     WarsWon
+BetPointsWon    BestFlipper      WarsLost
+BetPointsLost   WinStreak        WarPointsWon
+PointsBet       LossStreak       WarPointsLost
+BetsOpened      Highroller       PointsWarred
+\`\`\``})
             return
         }
         leaderboardType = LeaderboardTypes[leaderboardType]
