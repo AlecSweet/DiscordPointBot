@@ -2,8 +2,9 @@
   "name": "pointbot",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
+    "start": "ts-node index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint . --ext .ts"
   },
@@ -18,6 +19,7 @@
     "get-random-values": "^1.2.2",
     "moment-timezone": "^0.5.34",
     "mongoose": "^6.1.6",
+    "ts-node": "^10.5.0",
     "typescript": "^4.5.4",
     "wokcommands": "^1.5.3"
   },
