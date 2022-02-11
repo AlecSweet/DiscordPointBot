@@ -6,8 +6,9 @@ import isValidUserArg from "../util/isValidUserArg";
 import getUser, { addPoints, incUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import getRandomValues from 'get-random-values'
-import { Message } from "discord.js";
+import { Guild, Message, StringMappedInteractionTypes } from "discord.js";
 import { cancelChallenge } from "../util/challengeUtil";
+import { assignDustedRole } from "../events/assignMostPointsRole";
 
 const challenge: ICommand = {
     name: 'challenge',
@@ -166,7 +167,7 @@ const challenge: ICommand = {
                         await acceptMessage.react('3️⃣'), 
                         await acceptMessage.react('2️⃣'), 
                         await acceptMessage.react('1️⃣'),
-                        setTimeout(() => {finishBet(acceptBet, acceptMessage, targetUser.id, message.author.id)}, 400)
+                        setTimeout(() => {finishBet(acceptBet, acceptMessage, targetUser.id, message.author.id, guild)}, 400)
                     ],
                     await new Promise(resolve => setTimeout(resolve, 400))
                 ]);
@@ -187,7 +188,7 @@ const challenge: ICommand = {
 
 export default challenge
 
-const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, targetId: string, ownerId: string): Promise<boolean> => {
+const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, targetId: string, ownerId: string, guild: Guild): Promise<boolean> => {
     const arr = new Uint8Array(1);
     getRandomValues(arr);
     
@@ -196,14 +197,22 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
             content: `<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         })
         await incUser(ownerId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
-        await incUser(targetId, {challengePointsLost: acceptBet, challengesLost: 1})
+        const user = await incUser(targetId, {challengePointsLost: acceptBet, challengesLost: 1})
+        await deleteChallenge(ownerId)
+        if (acceptBet >= 100 && user.points < 5) {
+            await assignDustedRole(guild, user.id)
+        }
     } else {
         await acceptMessage.channel.send({
             content: `<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         })
         await incUser(targetId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
-        await incUser(ownerId, {challengePointsLost: acceptBet, challengesLost: 1})
+        const user = await incUser(ownerId, {challengePointsLost: acceptBet, challengesLost: 1})
+        await deleteChallenge(ownerId)
+        if (acceptBet >= 100 && user.points < 5) {
+            await assignDustedRole(guild, user.id)
+        }
     }
-    await deleteChallenge(ownerId)
+    
     return true
 }

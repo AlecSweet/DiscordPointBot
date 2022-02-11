@@ -3,6 +3,9 @@ import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
 import { userMutexes } from "..";
+import { Guild } from "discord.js";
+import { IUser } from "../db/user";
+import { assignDustedRole } from "../events/assignMostPointsRole";
 dotenv.config()
 
 const flip: ICommand = {
@@ -15,7 +18,7 @@ const flip: ICommand = {
     maxArgs: 1,
     cooldown: '3s',
     callback: async (options: ICallback) => {
-        const { message, args } = options
+        const { message, args, guild } = options
 
         if (!(message.channel.type === "GUILD_TEXT")) {
             message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
@@ -95,15 +98,16 @@ const flip: ICommand = {
             const rollFormatted = roll + 1
             Promise.all([
                 [
-                    message.react('3️⃣'), 
-                    message.react('2️⃣'), 
-                    message.react('1️⃣'),
+                    await message.react('3️⃣'), 
+                    await message.react('2️⃣'), 
+                    await message.react('1️⃣'),
                     [
                         won ? await message.react('✅') : await message.react('❌'),
                         won ? 
-                            message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256`}) :
-                            message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`})
-                    ]
+                            await message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256`}) :
+                            await message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`}),
+                        checkAndAssignDusted(guild, user, points)
+                    ]                   
                 ],
                 await new Promise(resolve => setTimeout(resolve, 400))
             ]);
@@ -112,3 +116,9 @@ const flip: ICommand = {
 }
 
 export default flip
+
+const checkAndAssignDusted = async (guild: Guild, user: IUser, bet: number) => {
+    if (bet >= 100 && user.points < 5) {
+        await assignDustedRole(guild, user.id)
+    }
+}

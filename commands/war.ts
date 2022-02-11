@@ -6,6 +6,7 @@ import getUser, { addPoints, incUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import getRandomValues from 'get-random-values'
 import { cancelWar } from "../util/warUtil";
+import { assignDustedRole } from "../events/assignMostPointsRole";
 
 const war: ICommand = {
     name: 'war',
@@ -177,12 +178,20 @@ const war: ICommand = {
                     await incUser(targetUser.id, {points: aP, warPointsWon: oPInital, warsWon: 1})
                     await incUser(message.author.id, {warPointsLost: oPInital, warsLost: 1})
                     await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${message.author.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${targetUser.id}> won ${oPInital} points ${process.env.NICE_EMOJI}`})
+                    await deleteWar(message.author.id)
+                    if (oPInital >= 100) {
+                        await assignDustedRole(guild, message.author.id)
+                    }
                 } else {
                     await incUser(message.author.id, {points: oP, warPointsWon: apInital, warsWon: 1})
                     await incUser(targetUser.id, {warPointsLost: apInital, warsLost: 1})
                     await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${targetUser.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${message.author.id}> won ${apInital} points ${process.env.NICE_EMOJI}`})
+                    await deleteWar(message.author.id)
+                    if (apInital >= 100) {
+                        await assignDustedRole(guild, targetUser.id)
+                    }
                 }
-                await deleteWar(message.author.id)
+                
             }).catch((err) => console.log(err))
         })
 

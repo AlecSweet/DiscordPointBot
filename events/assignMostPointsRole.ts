@@ -47,3 +47,20 @@ const assignMostPointsRole = async (guild: Guild) => {
 }
 
 export default assignMostPointsRole
+
+export const assignDustedRole = async (guild: Guild, userId: string) => {
+    const roleId = process.env.DUSTED_ROLE_ID ? process.env.DUSTED_ROLE_ID : ''
+    const dustedRole = guild.roles.cache.get(roleId);
+
+    if (dustedRole) {
+        dustedRole.members.forEach(async member => {
+            if (member.id !== userId) {
+                await member.roles.remove(dustedRole)
+            }
+        })
+        const dustedMember = guild.members.cache.get(userId)
+        if (dustedMember && !dustedMember.roles.cache.has(roleId)) {
+            await dustedMember.roles.add(dustedRole)
+        }
+    }
+}
