@@ -14,7 +14,7 @@ export const claimDaily = async (id: string, message: Message<boolean>) => {
         user = await updateUser(id, {dailyClaim: new Date(), pointsClaimed: user.pointsClaimed + 30})
         message.reply({content: `You got your daily 30 ${process.env.DOGEGE_JAM_EMOJI}`})
     } else {
-        message.reply({content: `Wait until ${nextDay} ${process.env.NOPPERS_EMOJI}`})
+        message.reply({content: `Wait until ${nextDay.toLocaleString("en-US", { timeZone: "America/Chicago" })} ${process.env.NOPPERS_EMOJI}`})
     }
 }
 
@@ -28,6 +28,6 @@ export const claimWeekly = async (id: string, message: Message<boolean>) => {
         user = await updateUser(id,{weeklyClaim: new Date(), pointsClaimed: user.pointsClaimed + 120})
         message.reply({content: `You got your weekly 120 ${process.env.DOGEGE_JAM_EMOJI}`})
     } else {
-        message.reply({content: `Wait until ${nextWeek} ${process.env.NOPPERS_EMOJI}`})
+        message.reply({content: `Wait until ${nextWeek.toLocaleString("en-US", { timeZone: "America/Chicago" })} ${process.env.NOPPERS_EMOJI}`})
     }
 }

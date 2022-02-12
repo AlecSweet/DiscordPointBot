@@ -6,7 +6,7 @@ import isValidUserArg from "../util/isValidUserArg";
 import getUser, { addPoints, incUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import getRandomValues from 'get-random-values'
-import { Guild, Message, StringMappedInteractionTypes } from "discord.js";
+import { Guild, Message } from "discord.js";
 import { cancelChallenge } from "../util/challengeUtil";
 import { assignDustedRole } from "../events/assignMostPointsRole";
 
@@ -18,6 +18,7 @@ const challenge: ICommand = {
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',
+    ownerOnly: true,
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
@@ -29,7 +30,7 @@ const challenge: ICommand = {
 
         let targetId = ''
         let filter = (i): boolean => {
-            return i.user.id !== message.author.id
+            return true
         }
         if (args[1]) {
             targetId = args[1].replace(/\D/g,'')
@@ -44,7 +45,7 @@ const challenge: ICommand = {
             }
 
             filter = (i): boolean => {
-                return i.user.id === targetId && i.user.id !== message.author.id
+                return i.user.id === targetId
             }
         }
 
@@ -90,16 +91,25 @@ const challenge: ICommand = {
             content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetId}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}. Challenge will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
             components: [{
                 type: 1,
-                components: [{
-                    type: 2,
-                    label: `Accept`,
-                    style: 3,
-                    customId: "acceptBet"
-                }]
+                components: [
+                    {
+                        type: 2,
+                        label: `Accept`,
+                        style: 3,
+                        customId: "acceptBet"
+                    },
+                    {
+                        type: 2,
+                        label: `Cancel`,
+                        style: 2,
+                        customId: "cancelBet"
+                    }
+                ]
             }]
         })
 
         let canceled = true
+        let cancelButtonHit = false
 
         const acceptMutex = withTimeout(new Mutex(), 10000)
 
@@ -108,74 +118,81 @@ const challenge: ICommand = {
         challengeCollector.on('collect', async i => {
             acceptMutex.runExclusive(async() => {
 
-                const challenge = await getChallenge(message.author.id)
-
-                if (challenge.acceptId && isValidUserArg(challenge.acceptId, guild)) {
-                    i.reply({content: `Challenge accepted already, too slow ${process.env.NOPPERS_EMOJI}`})
+                if (canceled && i.user.id === message.author.id && i.customId === 'cancelBet') {
+                    cancelButtonHit = true
+                    challengeCollector.stop()
                     return
-                }
+                } else if (!cancelButtonHit && i.user.id !== message.author.id && i.customId === 'acceptBet') {
 
-                const targetMutex = userMutexes.get(i.user.id)
-                if(!targetMutex) {
-                    i.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-                    return
-                }
-                let targetUser
-                let acceptBet
-                await targetMutex.runExclusive(async() => {
-                    targetUser = await getUser(i.user.id)
-                    if (targetUser.points < 1) {
-                        await i.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
+                    const challenge = await getChallenge(message.author.id)
+
+                    if (challenge.acceptId && isValidUserArg(challenge.acceptId, guild)) {
+                        i.reply({content: `Challenge accepted already, too slow ${process.env.NOPPERS_EMOJI}`})
                         return
                     }
-                    
-                    if(targetId === '' && targetUser.points < challengePoints){
-                        await i.reply({content: `You only got ${targetUser.points} ${process.env.NOPPERS_EMOJI}`})
+
+                    const targetMutex = userMutexes.get(i.user.id)
+                    if(!targetMutex) {
+                        i.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
                         return
                     }
-                    
-                    acceptBet = targetId === '' || targetUser.points >= challengePoints ? 
-                            challengePoints : 
-                            targetUser.points
+                    let targetUser
+                    let acceptBet
+                    await targetMutex.runExclusive(async() => {
+                        targetUser = await getUser(i.user.id)
+                        if (targetUser.points < 1) {
+                            await i.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
+                            return
+                        }
+                        
+                        if(targetId === '' && targetUser.points < challengePoints){
+                            await i.reply({content: `You only got ${targetUser.points} ${process.env.NOPPERS_EMOJI}`})
+                            return
+                        }
+                        
+                        acceptBet = targetId === '' || targetUser.points >= challengePoints ? 
+                                challengePoints : 
+                                targetUser.points
 
 
-                    if(acceptBet < challengePoints){
-                        await incUser(message.author.id, {points: challengePoints - acceptBet})
-                        await updateChallenge(message.author.id, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet })
-                    } else {
-                        await updateChallenge(message.author.id, {acceptId: targetUser.id, acceptBet })
+                        if(acceptBet < challengePoints){
+                            await incUser(message.author.id, {points: challengePoints - acceptBet})
+                            await updateChallenge(message.author.id, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet })
+                        } else {
+                            await updateChallenge(message.author.id, {acceptId: targetUser.id, acceptBet })
+                        }
+                        await incUser(targetUser.id, {points: -acceptBet})
+                    }).catch((err) => console.log(err))
+
+                    if (!acceptBet) {
+                        return
                     }
-                    await incUser(targetUser.id, {points: -acceptBet})
-                }).catch((err) => console.log(err))
+                    canceled = false
+                    challengeCollector.stop()
 
-                if (!acceptBet) {
-                    return
+                    await challengeMessage.edit({
+                        content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetUser.id}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}.`, 
+                        components: []
+                    })
+
+                    const acceptMessage = await challengeMessage.channel.send({
+                        content: `Challenge accepted by <@${targetUser.id}> for ${acceptBet} points ${process.env.PEPO_SMASH_EMOJI}`, 
+                    })
+                    await Promise.all([
+                        [
+                            await acceptMessage.react('3️⃣'), 
+                            await acceptMessage.react('2️⃣'), 
+                            await acceptMessage.react('1️⃣'),
+                            setTimeout(() => {finishBet(acceptBet, acceptMessage, targetUser.id, message.author.id, guild)}, 400)
+                        ],
+                        await new Promise(resolve => setTimeout(resolve, 400))
+                    ]);
                 }
-                canceled = false
-                challengeCollector.stop()
-
-                await challengeMessage.edit({
-                    content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetUser.id}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}.`, 
-                    components: []
-                })
-
-                const acceptMessage = await challengeMessage.channel.send({
-                    content: `Challenge accepted by <@${targetUser.id}> for ${acceptBet} points ${process.env.PEPO_SMASH_EMOJI}`, 
-                })
-                await Promise.all([
-                    [
-                        await acceptMessage.react('3️⃣'), 
-                        await acceptMessage.react('2️⃣'), 
-                        await acceptMessage.react('1️⃣'),
-                        setTimeout(() => {finishBet(acceptBet, acceptMessage, targetUser.id, message.author.id, guild)}, 400)
-                    ],
-                    await new Promise(resolve => setTimeout(resolve, 400))
-                ]);
             }).catch((err) => console.log(err))
         })
 
         challengeCollector.on('end', async () => {
-            if(canceled){
+            if (canceled || cancelButtonHit) {
                 const challenge = await getChallenge(message.author.id)
                 if (challenge) {
                     await cancelChallenge(message.author.id, challenge)
