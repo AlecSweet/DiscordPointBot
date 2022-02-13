@@ -57,6 +57,7 @@ const war: ICommand = {
             return
         }
 
+        let tempPoints = 0
         const failed = await userMutex.runExclusive(async(): Promise<number> => {
             const user = await getUser(message.author.id)
 
@@ -67,6 +68,7 @@ const war: ICommand = {
 
             await insertWar({ownerId: user.id, ownerBet: user.points, startDate: new Date()})
             await addPoints(user.id, -user.points)
+            tempPoints = user.points
             return 1
         }).catch(async (err):Promise<number> => { 
             console.log(err) 
@@ -78,7 +80,7 @@ const war: ICommand = {
         }
 
         const warMessage = await message.channel.send({
-            content: `<@${message.author.id}> wants a war ${targetId ? ` with <@${targetId}>` : ``} ${process.env.PEPO_SHAKE_EMOJI}\nWar will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
+            content: `<@${message.author.id}> wants a war ${targetId ? ` with <@${targetId}>` : ``}, theres ${tempPoints} points on the line ${process.env.PEPO_SHAKE_EMOJI}\nWar will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
             components: [{
                 type: 1,
                 components: [
