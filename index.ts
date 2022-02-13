@@ -10,6 +10,7 @@ import { checkAndCancelMaroonedBets } from "./util/betUtil";
 import { checkAndCancelMaroonedChallenges } from "./util/challengeUtil";
 import { checkAndCancelMaroonedWars } from "./util/warUtil";
 import assignMostPointsRole from "./events/assignMostPointsRole";
+import { checkAndCancelMaroonedRps } from "./util/rpsUtil";
 dotenv.config()
 
 process.on('uncaughtException', (err) => {console.log(err)})
@@ -59,6 +60,7 @@ client.on('ready', async () => {
         await checkAndCancelMaroonedBets(currentGuild).catch((err) => console.log(err))
         await checkAndCancelMaroonedChallenges().catch((err) => console.log(err))
         await checkAndCancelMaroonedWars().catch((err) => console.log(err))
+        await checkAndCancelMaroonedRps().catch((err) => console.log(err))
         await assignMostPointsRole(currentGuild).catch((err) => console.log(err))
     })
     checkInactiveMembers.start();

@@ -96,21 +96,17 @@ const flip: ICommand = {
             }
 
             const rollFormatted = roll + 1
-            Promise.all([
-                [
-                    await message.react('3️⃣'), 
-                    await message.react('2️⃣'), 
-                    await message.react('1️⃣'),
-                    [
-                        won ? await message.react('✅') : await message.react('❌'),
-                        won ? 
-                            await message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256`}) :
-                            await message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`}),
-                        checkAndAssignDusted(guild, user, points)
-                    ]                   
-                ],
-                await new Promise(resolve => setTimeout(resolve, 400))
-            ]);
+
+            await message.react('3️⃣')
+            setTimeout(async () => { await message.react('2️⃣') }, 900)
+            setTimeout(async () => { await message.react('1️⃣') }, 1800)
+            setTimeout(async () => { won ? await message.react('✅') : await message.react('❌') }, 2700)
+            setTimeout(async () => { 
+                won ? 
+                    await message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256`}) :
+                    await message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`})
+                checkAndAssignDusted(guild, user, points) 
+            }, 3200)
         }).catch(() => {})
     }
 }

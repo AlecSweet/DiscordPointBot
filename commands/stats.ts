@@ -57,6 +57,10 @@ const points: ICommand = {
             const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
             const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
 
+            const rpPF = (user.rpsWon + user.rpsLost) > 0 ? (Math.round(((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost)) * 10) / 10).toFixed(1) : 0
+            const rpPL = user.rpsLost > 0 ? (Math.round((user.rpsPointsLost / user.rpsLost) * 10) / 10).toFixed(1) : 0
+            const rpPW = user.rpsWon > 0 ? (Math.round((user.rpsPointsWon / user.rpsWon) * 10) / 10).toFixed(1) : 0
+
             message.reply({content: 
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
@@ -85,6 +89,10 @@ Avg Bets        ${cpPF} Avg Bet / ${cpPW} Avg Win / ${cpPL} Avg Loss
 War             ${user.warsWon+user.warsLost} Total / ${user.warsWon} Won / ${user.warsLost} Lost
 Returns         ${user.warPointsWon+user.warPointsLost} Total / ${user.warPointsWon} Won / ${user.warPointsLost} Lost
 Avg Bets        ${wpPF} Avg Bet / ${wpPW} Avg Win / ${wpPL} Avg Loss
+
+R P S           ${user.rpsWon+user.rpsLost} Total / ${user.rpsWon} Won / ${user.rpsLost} Lost
+Returns         ${user.rpsPointsWon+user.rpsPointsLost} Total / ${user.rpsPointsWon} Won / ${user.rpsPointsLost} Lost
+Avg Bets        ${rpPF} Avg Bet / ${rpPW} Avg Win / ${rpPL} Avg Loss
 \`\`\``
             })
         }).catch(() => {})

@@ -39,7 +39,13 @@ enum LeaderboardTypes {
     pointschallenged= 'pointsChallenged', 
     challengeswon= 'challengesWon', 
     challengeslost= 'challengesLost', 
-    challenges= 'challenges', 
+    challenges= 'challenges',
+    rpspointswon = 'rpsPointsWon',
+    rpspointslost = 'rpsPointsLost',
+    pointsrps = 'pointsRps',
+    rpswon = 'rpsWon',
+    rpslost = 'rpsLost',
+    rps = 'rps',
 }
 
 enum LeaderboardTitles {
@@ -80,6 +86,12 @@ enum LeaderboardTitles {
     warsWon = 'Wars Won Top',
     warsLost = 'Wars Lost Top',
     wars = 'Total Wars Played In Top',
+    rpsPointsWon = 'Points Won On Rock Paper Scissors Top',
+    rpsPointsLost = 'Points Lost On Rock Paper Scissors Top',
+    pointsRps = 'Total Points Bet on Rock Paper Scissors Top',
+    rpsWon = 'Rock Paper Scissors Rounds Won Top',
+    rpsLost = 'Rock Paper Scissors Rounds Lost Top',
+    rps = 'Total Rock Paper Scissors Rounds Played In Top',
 }
 
 
@@ -177,6 +189,18 @@ const leaderboardAggregates = {
         {$addFields: { challenges: { $add: [ "$challengesWon", "$challengesLost"]}}},
         {$sort: {challenges:-1}},
     ],
+    rpsPointsWon: [{$sort:{rpsPointsWon:-1}}],
+    rpsPointsLost: [{$sort:{rpsPointsLost:-1}}],
+    pointsRps: [
+        {$addFields: { pointsChallenged: { $add: [ "$rpsPointsWon", "$rpsPointsLost"]}}},
+        {$sort: {pointsChallenged:-1}},
+    ],
+    rpsWon: [{$sort:{rpsWon:-1}}],
+    rpsLost: [{$sort:{rpsLost:-1}}],
+    rps: [
+        {$addFields: { rps: { $add: [ "$rpsWon", "$rpsLost"]}}},
+        {$sort: {rps:-1}},
+    ],
 }
 
 const leaderboard: ICommand = {
@@ -220,6 +244,13 @@ BetPointsWon    BestFlipper      WarsLost
 BetPointsLost   WinStreak        WarPointsWon
 PointsBet       LossStreak       WarPointsLost
 BetsOpened      Highroller       PointsWarred
+
+Rps
+RpsWon
+RpsLost
+RpsPointsWon
+RpsPointsLost
+PointsRps
 \`\`\``})
             return
         }

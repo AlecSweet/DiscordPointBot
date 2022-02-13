@@ -33,6 +33,10 @@ export interface IUser {
     warPointsLost: number
     warsWon: number
     warsLost: number
+    rpsPointsWon: number
+    rpsPointsLost: number
+    rpsWon: number
+    rpsLost: number
 }
 
 export interface IUserUpdates {
@@ -65,6 +69,10 @@ export interface IUserUpdates {
     warPointsLost?: number
     warsWon?: number
     warsLost?: number
+    rpsPointsWon?: number
+    rpsPointsLost?: number
+    rpsWon?: number
+    rpsLost?: number
 }
 
 const userSchema = new Schema({
@@ -185,6 +193,22 @@ const userSchema = new Schema({
         default: 0
     },
     warsLost: {
+        type: Number,
+        default: 0
+    },
+    rpsPointsWon: {
+        type: Number,
+        default: 0
+    },
+    rpsPointsLost: {
+        type: Number,
+        default: 0
+    },
+    rpsWon: {
+        type: Number,
+        default: 0
+    },
+    rpsLost: {
         type: Number,
         default: 0
     },

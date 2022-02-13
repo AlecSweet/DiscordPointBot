@@ -87,6 +87,10 @@ export const getUserNoAccrue = async (id: string): Promise<IUser> => {
         warPointsLost: userEntry.warPointsLost,
         warsWon:userEntry.warsWon,
         warsLost: userEntry.warsLost,
+        rpsPointsWon: userEntry.rpsPointsWon,
+        rpsPointsLost: userEntry.rpsPointsLost,
+        rpsWon:userEntry.rpsWon,
+        rpsLost: userEntry.rpsLost,
     }
 }
 
@@ -124,6 +128,10 @@ export const incUser = async (id: string, updates: IUserUpdates): Promise<IUser>
         warPointsLost: userEntry.warPointsLost,
         warsWon:userEntry.warsWon,
         warsLost: userEntry.warsLost,
+        rpsPointsWon: userEntry.rpsPointsWon,
+        rpsPointsLost: userEntry.rpsPointsLost,
+        rpsWon:userEntry.rpsWon,
+        rpsLost: userEntry.rpsLost,
     }
 }
 
@@ -161,6 +169,10 @@ export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUs
         warPointsLost: userEntry.warPointsLost,
         warsWon:userEntry.warsWon,
         warsLost: userEntry.warsLost,
+        rpsPointsWon: userEntry.rpsPointsWon,
+        rpsPointsLost: userEntry.rpsPointsLost,
+        rpsWon:userEntry.rpsWon,
+        rpsLost: userEntry.rpsLost,
     }
 }
 
@@ -197,5 +209,9 @@ const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> =>
         warPointsLost: userEntry.warPointsLost,
         warsWon:userEntry.warsWon,
         warsLost: userEntry.warsLost,
+        rpsPointsWon: userEntry.rpsPointsWon,
+        rpsPointsLost: userEntry.rpsPointsLost,
+        rpsWon:userEntry.rpsWon,
+        rpsLost: userEntry.rpsLost,
     }
 }

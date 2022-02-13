@@ -18,7 +18,6 @@ const challenge: ICommand = {
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',
-    ownerOnly: true,
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
@@ -45,7 +44,7 @@ const challenge: ICommand = {
             }
 
             filter = (i): boolean => {
-                return i.user.id === targetId
+                return i.user.id === targetId || i.user.id === message.author.id
             }
         }
 
@@ -212,7 +211,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
     if(arr[0] < 128) {
         await acceptMessage.channel.send({
             content: `<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
-        })
+        }).catch((err) => console.log(err))
         await incUser(ownerId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
         const user = await incUser(targetId, {challengePointsLost: acceptBet, challengesLost: 1})
         await deleteChallenge(ownerId)
@@ -222,7 +221,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
     } else {
         await acceptMessage.channel.send({
             content: `<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
-        })
+        }).catch((err) => console.log(err))
         await incUser(targetId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
         const user = await incUser(ownerId, {challengePointsLost: acceptBet, challengesLost: 1})
         await deleteChallenge(ownerId)
