@@ -53,6 +53,49 @@ if (cooldown > -1) {
     return
 }*/
 
+export const getAllUsers = async (): Promise<IUser[]> => {
+    const findResult = await userModel.find()
+    const users = findResult.map(userEntry => {
+        return {
+            id: userEntry.id, 
+            points: userEntry.points, 
+            activeStartDate: userEntry.activeStartDate,
+            flipsLost: userEntry.flipsLost,
+            flipsWon: userEntry.flipsWon,
+            pointsWon: userEntry.pointsWon,
+            pointsLost: userEntry.pointsLost,
+            secondsActive: userEntry.secondsActive,
+            cooldown: userEntry.cooldown,
+            flipStreak: userEntry.flipStreak,
+            maxWinStreak: userEntry.maxWinStreak,
+            maxLossStreak: userEntry.maxLossStreak,
+            dailyClaim: userEntry.dailyClaim,
+            weeklyClaim: userEntry.weeklyClaim,
+            pointsGiven: userEntry.pointsGiven,
+            pointsRecieved: userEntry.pointsRecieved,
+            pointsClaimed: userEntry.pointsClaimed,
+            betPointsWon: userEntry.betPointsWon,
+            betPointsLost: userEntry.betPointsLost,
+            betsWon: userEntry.betsWon,
+            betsLost: userEntry.betsLost,
+            betsOpened:  userEntry.betsOpened,
+            challengePointsWon: userEntry.challengePointsWon,
+            challengePointsLost: userEntry.challengePointsLost,
+            challengesWon: userEntry.challengesWon,
+            challengesLost: userEntry.challengesLost,
+            warPointsWon: userEntry.warPointsWon,
+            warPointsLost: userEntry.warPointsLost,
+            warsWon:userEntry.warsWon,
+            warsLost: userEntry.warsLost,
+            rpsPointsWon: userEntry.rpsPointsWon,
+            rpsPointsLost: userEntry.rpsPointsLost,
+            rpsWon:userEntry.rpsWon,
+            rpsLost: userEntry.rpsLost,
+        }
+    })
+    return users
+}
+
 export const getUserNoAccrue = async (id: string): Promise<IUser> => {
     const findResult = await userModel.findOne({id})
     const userEntry = findResult ? findResult : await insertUser(id)

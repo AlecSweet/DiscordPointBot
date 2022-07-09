@@ -64,35 +64,35 @@ const points: ICommand = {
             message.reply({content: 
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
-Points          ${user.points}
+Points          ${user.points.toLocaleString('en-US')}
 Active          ${days} days / ${hours} hours / ${minutes} minutes
 
-Points Earned   ${Math.floor(user.secondsActive/60)}
-Point Gifts     ${user.pointsGiven} Given / ${user.pointsRecieved} Received
-Points Claimed  ${user.pointsClaimed} Claimed   
+Points Earned   ${Math.floor(user.secondsActive/60).toLocaleString('en-US')}
+Point Gifts     ${user.pointsGiven.toLocaleString('en-US')} Given / ${user.pointsRecieved.toLocaleString('en-US')} Received
+Points Claimed  ${user.pointsClaimed.toLocaleString('en-US')} Claimed   
 
-Bets            ${user.betsWon+user.betsLost} Total / ${user.betsWon} Won / ${user.betsLost} Lost
-Returns         ${user.betPointsWon+user.betPointsLost} Total / ${user.betPointsWon} Won / ${user.betPointsLost} Lost
-Avg Bets        ${bpPF} Avg Bet / ${bpPW} Avg Win / ${bpPL} Avg Loss
-Bets Opened     ${user.betsOpened}
+Flips           ${(user.flipsWon+user.flipsLost).toLocaleString('en-US')} Total / ${user.flipsWon.toLocaleString('en-US')} Won / ${user.flipsLost.toLocaleString('en-US')} Lost
+Returns         ${(user.pointsWon+user.pointsLost).toLocaleString('en-US')} Total / ${user.pointsWon.toLocaleString('en-US')} Won / ${user.pointsLost.toLocaleString('en-US')} Lost
+Avg Bets        ${pPF.toLocaleString('en-US')} Avg Bet / ${pPW.toLocaleString('en-US')} Avg Win / ${pPL.toLocaleString('en-US')} Avg Loss
+Max Streak      ${user.maxWinStreak.toLocaleString('en-US')} Won / ${user.maxLossStreak.toLocaleString('en-US')} Lost
+Current Streak  ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak).toLocaleString('en-US')} Lost` : `${user.flipStreak.toLocaleString('en-US')} Won`}
 
-Flips           ${user.flipsWon+user.flipsLost} Total / ${user.flipsWon} Won / ${user.flipsLost} Lost
-Returns         ${user.pointsWon+user.pointsLost} Total / ${user.pointsWon} Won / ${user.pointsLost} Lost
-Avg Bets        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
-Max Streak      ${user.maxWinStreak} Won / ${user.maxLossStreak} Lost
-Current Streak  ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak)} Lost` : `${user.flipStreak} Won`}
+Challenges      ${(user.challengesWon+user.challengesLost).toLocaleString('en-US')} Total / ${user.challengesWon.toLocaleString('en-US')} Won / ${user.challengesLost.toLocaleString('en-US')} Lost
+Returns         ${(user.challengePointsWon+user.challengePointsLost).toLocaleString('en-US')} Total / ${user.challengePointsWon.toLocaleString('en-US')} Won / ${user.challengePointsLost.toLocaleString('en-US')} Lost
+Avg Bets        ${cpPF.toLocaleString('en-US')} Avg Bet / ${cpPW.toLocaleString('en-US')} Avg Win / ${cpPL.toLocaleString('en-US')} Avg Loss
 
-Challenges      ${user.challengesWon+user.challengesLost} Total / ${user.challengesWon} Won / ${user.challengesLost} Lost
-Returns         ${user.challengePointsWon+user.challengePointsLost} Total / ${user.challengePointsWon} Won / ${user.challengePointsLost} Lost
-Avg Bets        ${cpPF} Avg Bet / ${cpPW} Avg Win / ${cpPL} Avg Loss
+War             ${(user.warsWon+user.warsLost).toLocaleString('en-US')} Total / ${user.warsWon.toLocaleString('en-US')} Won / ${user.warsLost.toLocaleString('en-US')} Lost
+Returns         ${(user.warPointsWon+user.warPointsLost).toLocaleString('en-US')} Total / ${user.warPointsWon.toLocaleString('en-US')} Won / ${user.warPointsLost.toLocaleString('en-US')} Lost
+Avg Bets        ${wpPF.toLocaleString('en-US')} Avg Bet / ${wpPW.toLocaleString('en-US')} Avg Win / ${wpPL.toLocaleString('en-US')} Avg Loss
 
-War             ${user.warsWon+user.warsLost} Total / ${user.warsWon} Won / ${user.warsLost} Lost
-Returns         ${user.warPointsWon+user.warPointsLost} Total / ${user.warPointsWon} Won / ${user.warPointsLost} Lost
-Avg Bets        ${wpPF} Avg Bet / ${wpPW} Avg Win / ${wpPL} Avg Loss
+R P S           ${(user.rpsWon+user.rpsLost).toLocaleString('en-US')} Total / ${user.rpsWon.toLocaleString('en-US')} Won / ${user.rpsLost.toLocaleString('en-US')} Lost
+Returns         ${(user.rpsPointsWon+user.rpsPointsLost).toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Won / ${user.rpsPointsLost.toLocaleString('en-US')} Lost
+Avg Bets        ${rpPF.toLocaleString('en-US')} Avg Bet / ${rpPW.toLocaleString('en-US')} Avg Win / ${rpPL.toLocaleString('en-US')} Avg Loss
 
-R P S           ${user.rpsWon+user.rpsLost} Total / ${user.rpsWon} Won / ${user.rpsLost} Lost
-Returns         ${user.rpsPointsWon+user.rpsPointsLost} Total / ${user.rpsPointsWon} Won / ${user.rpsPointsLost} Lost
-Avg Bets        ${rpPF} Avg Bet / ${rpPW} Avg Win / ${rpPL} Avg Loss
+Bets            ${(user.betsWon+user.betsLost).toLocaleString('en-US')} Total / ${user.betsWon.toLocaleString('en-US')} Won / ${user.betsLost.toLocaleString('en-US')} Lost
+Returns         ${(user.betPointsWon+user.betPointsLost).toLocaleString('en-US')} Total / ${user.betPointsWon.toLocaleString('en-US')} Won / ${user.betPointsLost.toLocaleString('en-US')} Lost
+Avg Bets        ${bpPF.toLocaleString('en-US')} Avg Bet / ${bpPW.toLocaleString('en-US')} Avg Win / ${bpPL.toLocaleString('en-US')} Avg Loss
+Bets Opened     ${user.betsOpened.toLocaleString('en-US')}
 \`\`\``
             })
         }).catch(() => {})
