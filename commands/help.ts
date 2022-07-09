@@ -18,6 +18,7 @@ const points: ICommand = {
 `Point Bot Commands:\`\`\`
 Leaderboards:     !top
 Statistics:       !stats <Optional @User>
+Server Stats      !serverStats
 Check Points:     !points <Optional @User>
 
 Give Points:      !give <@User> <# or "all">

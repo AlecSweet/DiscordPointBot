@@ -8,7 +8,6 @@ const serverStats: ICommand = {
     minArgs: 0,
     maxArgs: 0,
     cooldown: '30s',
-    ownerOnly: true,
     callback: async (options: ICallback) => {
         const { message } = options
 
