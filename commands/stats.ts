@@ -66,6 +66,7 @@ const points: ICommand = {
 \`\`\`Ruby
 Points          ${user.points.toLocaleString('en-US')}
 Active          ${days} days / ${hours} hours / ${minutes} minutes
+Gambling Debt   ${(user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + 100)).toLocaleString('en-US')}
 
 Points Earned   ${Math.floor(user.secondsActive/60).toLocaleString('en-US')}
 Point Gifts     ${user.pointsGiven.toLocaleString('en-US')} Given / ${user.pointsRecieved.toLocaleString('en-US')} Received

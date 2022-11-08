@@ -1,9 +1,12 @@
 import userModel from "../db/user";
 import isValidNumberArg from "../util/isValidNumberArg";
+import { escapeMarkdown } from "../util/isValidUserArg";
 import { ICallback, ICommand } from "../wokTypes";
 
 enum LeaderboardTypes {
     points = 'points',
+    mostdebt = 'mostDebt',
+    leastdebt = 'leastDebt',
     flipslost = 'flipsLost',
     flipswon = 'flipsWon',
     pointsflipped = 'pointsFlipped',
@@ -50,6 +53,8 @@ enum LeaderboardTypes {
 
 enum LeaderboardTitles {
     points = 'Points Top',
+    mostDebt = 'Most Debt',
+    leastDebt = 'Least Debt',
     flips = 'Total Flips Top',
     flipsLost = 'Flips Lost Top',
     flipsWon = 'Flips Won Top',
@@ -97,6 +102,15 @@ enum LeaderboardTitles {
 
 const leaderboardAggregates = {
     points: [{$sort:{points:-1}}],
+    mostDebt: [
+        {$addFields: { 
+            mostDebt: { $subtract: [ "$points", { $add: [ {$add: [ {$floor: { $divide: [ "$secondsActive", 60] } }, 100]}, "$pointsClaimed"]}]}}},
+        {$sort: {mostDebt:1}},
+    ],
+    leastDebt: [
+        {$addFields: { leastDebt: { $subtract: [ "$points", { $add: [ {$floor: { $divide: [ "$secondsActive", 60] }}, 100]}]}}},
+        {$sort: {leastDebt:-1}},
+    ],
     flips: [
         {$addFields: { flips: { $add: [ "$flipsLost", "$flipsWon"]}}},
         {$sort: {flips:-1}},
@@ -207,7 +221,7 @@ const leaderboard: ICommand = {
     name: 'top',
     category: 'leaderboard',
     description: 'top users',
-    expectedArgs: '<leaderboard type> <Optional # of users (1-20)>',
+    expectedArgs: '<leaderboard type> <Optional # of users (1-25)>',
     minArgs: 0,
     maxArgs: 2,
     cooldown: '6s',
@@ -227,38 +241,32 @@ const leaderboard: ICommand = {
                 validTypes.push(e)
             }
             message.reply({content: 
-`Use !top <leaderboard type> <optional # of users[1-20]>
+`Use !top <leaderboard type> <optional # of users[1-25]>
 \`\`\`
 Leadboard Types:
 
-Points          Flips            Challenges
-Active          FlipsWon         ChallengesWon
-Given           FlipsLost        ChallengesLost
-Received        FlipPointsWon    ChallengePointsWon
-PointsClaimed   FlipPointsLost   ChallengePointsLost
-                PointsFlipped    PointsChallenged
-Bets            Unluckiest
-BetsWon         Luckiest         Wars
-BetsLost        WorstFlipper     WarsWon
-BetPointsWon    BestFlipper      WarsLost
-BetPointsLost   WinStreak        WarPointsWon
-PointsBet       LossStreak       WarPointsLost
-BetsOpened      Highroller       PointsWarred
-
-Rps
-RpsWon
-RpsLost
-RpsPointsWon
-RpsPointsLost
-PointsRps
+Points          Flips            Challenges             Rps
+Active          FlipsWon         ChallengesWon          RpsWon
+Given           FlipsLost        ChallengesLost         RpsLost
+Received        FlipPointsWon    ChallengePointsWon     RpsPointsWon
+PointsClaimed   FlipPointsLost   ChallengePointsLost    RpsPointsLost
+MostDebt        PointsFlipped    PointsChallenged       PointsRps
+Least Debt      Unluckiest
+                Luckiest         Wars                   Bets 
+                WorstFlipper     WarsWon                BetsWon 
+                BestFlipper      WarsLost               BetsLost 
+                WinStreak        WarPointsWon           BetPointsWon
+                LossStreak       WarPointsLost          BetPointsLost
+                Highroller       PointsWarred           BetsOpened
+                                                        PointsBet
 \`\`\``})
             return
         }
         leaderboardType = LeaderboardTypes[leaderboardType]
 
         const numTop = args[1] ? Number(args[1]) : 5
-        if (!isValidNumberArg(numTop) || numTop > 20) {
-            message.reply({content: `${args[1]} ain valid for number of top users ${process.env.NOPPERS_EMOJI}, enter a number 1-20`})
+        if (!isValidNumberArg(numTop) || numTop > 25) {
+            message.reply({content: `${args[1]} ain valid for number of top users ${process.env.NOPPERS_EMOJI}, enter a number 1-25`})
             return
         }
 
@@ -267,11 +275,11 @@ PointsRps
             {$limit: numTop}
         ])
 
-
         let maxLen=0
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = await Promise.all(result.map(async (user, index): Promise<any> => {
-            const name = (await guild.members.fetch(user.id)).displayName
+            const member = await guild.members.fetch(user.id).catch(() => undefined)
+            const name = !!member ? escapeMarkdown(member.displayName) : "Deleted User"
             maxLen = maxLen < name.length ? name.length : maxLen
             return {
                 nameLen: name.length,

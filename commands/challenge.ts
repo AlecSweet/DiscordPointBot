@@ -125,7 +125,7 @@ const challenge: ICommand = {
 
                     const challenge = await getChallenge(message.author.id)
 
-                    if (challenge.acceptId && isValidUserArg(challenge.acceptId, guild)) {
+                    if (challenge.acceptId && await isValidUserArg(challenge.acceptId, guild)) {
                         i.reply({content: `Challenge accepted already, too slow ${process.env.NOPPERS_EMOJI}`})
                         return
                     }
