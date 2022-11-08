@@ -1,6 +1,6 @@
 import userModel from "../db/user";
 import isValidNumberArg from "../util/isValidNumberArg";
-import { escapeMarkdown } from "../util/isValidUserArg";
+import { deleteMarkdown } from "../util/isValidUserArg";
 import { ICallback, ICommand } from "../wokTypes";
 
 enum LeaderboardTypes {
@@ -279,7 +279,7 @@ Least Debt      Unluckiest
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = await Promise.all(result.map(async (user, index): Promise<any> => {
             const member = await guild.members.fetch(user.id).catch(() => undefined)
-            const name = !!member ? escapeMarkdown(member.displayName) : "Deleted User"
+            const name = !!member ? deleteMarkdown(member.displayName) : "Deleted User"
             maxLen = maxLen < name.length ? name.length : maxLen
             return {
                 nameLen: name.length,
