@@ -116,7 +116,7 @@ const war: ICommand = {
                 } else if (!cancelButtonHit && i.user.id !== message.author.id && i.customId === 'acceptWar') {
                     const war = await getWar(message.author.id)
 
-                    if (war.acceptId && isValidUserArg(war.acceptId, guild)) {
+                    if (war.acceptId && await isValidUserArg(war.acceptId, guild)) {
                         i.reply({content: `War accepted already, too slow ${process.env.NOPPERS_EMOJI}`})
                         return
                     }
