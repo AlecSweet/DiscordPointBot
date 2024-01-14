@@ -30,7 +30,7 @@ const flip: ICommand = {
             message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
             return
         }
-        userMutex.runExclusive(async() => {
+        await userMutex.runExclusive(async() => {
             let user = await getUser(message.author.id)
 
             const flipAll = args[0].toUpperCase() === 'ALL'
@@ -55,9 +55,9 @@ const flip: ICommand = {
                 }
             }
             if (flips > 1) {
-                flipMultiple(guild, user, points, message, flips, flipAll)
+                await flipMultiple(guild, user, points, message, flips, flipAll)
             } else {
-                flipOnce(guild, user, points, message);
+                await flipOnce(guild, user, points, message);
             }
         }).catch(() => {})
     }
