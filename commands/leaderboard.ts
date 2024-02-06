@@ -104,11 +104,11 @@ const leaderboardAggregates = {
     points: [{$sort:{points:-1}}],
     mostDebt: [
         {$addFields: { 
-            mostDebt: { $subtract: [ "$points", { $add: [ {$add: [ {$floor: { $divide: [ "$secondsActive", 60] } }, 100]}, "$pointsClaimed"]}]}}},
+            mostDebt: { $subtract: [{ $add: [ {$add: [ {$floor: { $divide: [ "$secondsActive", 60] } }, 100]}, "$pointsClaimed"]}, "$points"]}}},
         {$sort: {mostDebt:1}},
     ],
     leastDebt: [
-        {$addFields: { leastDebt: { $subtract: [ "$points", { $add: [ {$floor: { $divide: [ "$secondsActive", 60] }}, 100]}]}}},
+        {$addFields: { leastDebt: { $subtract: [ { $add: [ {$floor: { $divide: [ "$secondsActive", 60] }}, 100]}, "$points"]}}},
         {$sort: {leastDebt:-1}},
     ],
     flips: [
