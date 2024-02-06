@@ -59,9 +59,10 @@ const serverStats: ICommand = {
                 rpsLost: aggUser.rpsLost + curUser.rpsLost
             }
         })
-
-        const days = Math.floor(user.secondsActive / 86400)
-        const secLeftAfterDays = user.secondsActive % 86400
+        const years = Math.floor(user.secondsActive / 31536000)
+        const secLeftAfterYears = user.secondsActive % 31536000
+        const days = Math.floor(secLeftAfterYears / 86400)
+        const secLeftAfterDays = secLeftAfterYears % 86400
         const hours = Math.floor(secLeftAfterDays / 3600)
         const secLeftAfterHours = secLeftAfterDays % 3600
         const minutes = Math.floor(secLeftAfterHours / 60)
@@ -74,13 +75,13 @@ const serverStats: ICommand = {
 `**Server Stats**
 \`\`\`Ruby
 Existing Points      ${user.points.toLocaleString('en-US')}
-Time Wasted          ${days} days / ${hours} hours / ${minutes} minutes
+Time Wasted          ${years} years / ${days} days / ${hours} hours / ${minutes} minutes
 
 Points Farmed        ${Math.floor(user.secondsActive/60).toLocaleString('en-US')}
 Points Claimed       ${user.pointsClaimed.toLocaleString('en-US')}
 Total Earnings       ${(user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate).toLocaleString('en-US')}
 
-Gambling Debt        ${(user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate)).toLocaleString('en-US')}
+Debt                 ${Math.max((user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate)) * -1, 0).toLocaleString('en-US')}
 
 Flips                ${(user.flipsWon+user.flipsLost).toLocaleString('en-US')} Total / ${user.flipsWon.toLocaleString('en-US')} Won / ${user.flipsLost.toLocaleString('en-US')} Lost
 Returns              ${(user.pointsWon+user.pointsLost).toLocaleString('en-US')} Total / ${user.pointsWon.toLocaleString('en-US')} Won / ${user.pointsLost.toLocaleString('en-US')} Lost
