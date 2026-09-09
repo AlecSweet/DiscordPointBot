@@ -8,6 +8,8 @@ const forceCancelBet: ICommand = {
     category: 'force cancel bet',
     description: 'force cancel bet',
     cooldown: '3s',
+    ownerOnly: true,
+    hidden: true,
     callback: async (options: ICallback) => {
         const { message, guild } = options
 

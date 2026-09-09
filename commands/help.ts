@@ -24,10 +24,8 @@ Check Points:     !points <Optional @User>
 Give Points:      !give <@User> <# or "all">
 Claim Bonus:      !claim <daily or weekly> or !daily/!weekly
 
-Create Bet:       !openBet <#options><#betting period>
-Cancel Bet:       !forceCancelBet
-
-50/50 Gamble:     !flip <# or "all">
+50/50 Gamble:     !flip <# or "all"> <Optional # of flips>
+Martingale:       !martin <bet size> <# of wins or bust>
 Challenge:        !challenge <# or "all"> <Optional @User>
 War:              !war <Optional @User>
 RockPaperScissors !rps <# or "all"> <Optional @User>

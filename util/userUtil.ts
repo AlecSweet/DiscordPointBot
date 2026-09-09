@@ -37,22 +37,6 @@ const getUser = async (id: string): Promise<IUser> => {
 
 export default getUser
 
-/*export const checkAndTriggerUserCooldown = async (id: string): Promise<number> => {
-    const user = await getUserNoAccrue(id)
-    const currentDate = new Date()
-    if (!user.cooldown || currentDate.getTime() - user.cooldown.getTime() > 3000) {
-        updateUser(id, {cooldown: currentDate})
-        return -1
-    }
-    return 3000 - (currentDate.getTime() - user.cooldown.getTime())
-}*/
-
-/*const cooldown = await checkAndTriggerUserCooldown(id)
-if (cooldown > -1) {
-    message.reply({content: `Wait ${Math.ceil(cooldown/1000)} seconds to target commands at <@${id}> ${process.env.NOPPERS_EMOJI}`})
-    return
-}*/
-
 export const getAllUsers = async (): Promise<IUser[]> => {
     const findResult = await userModel.find()
     const users = findResult.map(userEntry => {

@@ -34,7 +34,7 @@ const give: ICommand = {
 
         let points = 0
         const userMutex = userMutexes.get(message.author.id)
-        if(!userMutex) {
+        if (!userMutex) {
             message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
             return
         }
@@ -60,19 +60,12 @@ const give: ICommand = {
             const author = await addPoints(user.id, -points)
             await incUser(author.id, {pointsGiven: points})
             message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
-        }).then(() => {
-            if(!failed) {
-                const gifteeMutex = userMutexes.get(gifteeId)
-                if(!gifteeMutex) {
-                    message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-                    return
-                }
-                gifteeMutex.runExclusive(async() => {
-                    const giftee = await addPoints(gifteeId, points)
-                    await incUser(giftee.id, {pointsRecieved: points})
-                }).catch(() => {})
+        }).then(async () => {
+            if (!failed) {
+                const giftee = await addPoints(gifteeId, points)
+                await incUser(giftee.id, {pointsRecieved: points})
             }
-        }).catch(() => {})
+        }).catch((err) => console.log(err))
     }
 }
 

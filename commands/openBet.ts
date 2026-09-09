@@ -17,6 +17,8 @@ const openBet: ICommand = {
     minArgs: 2,
     maxArgs: 2,
     cooldown: '3s',
+    ownerOnly: true,
+    hidden: true,
     callback: async (options: ICallback) => {
         const { client, message, args } = options
 

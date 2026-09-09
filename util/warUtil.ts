@@ -1,4 +1,3 @@
-import { userMutexes } from "..";
 import warModel, { deleteWar, IwarRet } from "../db/war";
 import { incUser } from "./userUtil";
 
@@ -16,24 +15,10 @@ export const checkAndCancelMaroonedWars = async () => {
 }
 
 export const cancelWar = async (ownerId: string, war: IwarRet) => {
-    const ownerMutex = userMutexes.get(ownerId)
-    if (ownerMutex) {
-        await ownerMutex.runExclusive(async() => {
-            await incUser(ownerId, {points: war.ownerBet})
-        }).catch(err => {console.log(err)})
-    } else {
-        await incUser(ownerId, {points: war.ownerBet})
-    }
+    await incUser(ownerId, {points: war.ownerBet})
 
     if (war.acceptId !== '') {
-        const targetMutex = userMutexes.get(war.acceptId)
-        if (targetMutex) {
-            await targetMutex.runExclusive(async() => {
-                await incUser(war.acceptId, {points: war.acceptBet})
-            }).catch(err => {console.log(err)})
-        } else {
-            await incUser(war.acceptId, {points: war.acceptBet})
-        }
+        await incUser(war.acceptId, {points: war.acceptBet})
     }
     await deleteWar(ownerId)
 }
