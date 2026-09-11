@@ -36,6 +36,8 @@ const serverStats: ICommand = {
                 maxLossStreak: aggUser.maxLossStreak + curUser.maxLossStreak ,
                 dailyClaim: curUser.dailyClaim ,
                 weeklyClaim: curUser.weeklyClaim ,
+                monthlyClaim: curUser.monthlyClaim ,
+                yearlyClaim: curUser.yearlyClaim ,
                 pointsGiven: aggUser.pointsGiven + curUser.pointsGiven ,
                 pointsRecieved: aggUser.pointsRecieved + curUser.pointsRecieved ,
                 pointsClaimed: aggUser.pointsClaimed + curUser.pointsClaimed ,
@@ -87,7 +89,6 @@ Returns              ${(user.pointsWon+user.pointsLost).toLocaleString('en-US')}
 Avg Bets             ${pPF.toLocaleString('en-US')} Avg Bet / ${pPW.toLocaleString('en-US')} Avg Win / ${pPL.toLocaleString('en-US')} Avg Loss
 
 Points Given         ${user.pointsGiven.toLocaleString('en-US')} Given
-Bets                 ${user.betsOpened.toLocaleString('en-US')} Total / ${user.betPointsWon.toLocaleString('en-US')} Points
 Challenges           ${user.challengesWon.toLocaleString('en-US')} Total / ${user.challengePointsWon.toLocaleString('en-US')} Points
 Wars                 ${user.warsWon.toLocaleString('en-US')} Total / ${user.warPointsWon.toLocaleString('en-US')} Points
 R P S                ${user.rpsWon.toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Points

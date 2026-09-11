@@ -16,6 +16,8 @@ export interface IUser {
     maxLossStreak: number
     dailyClaim: Date
     weeklyClaim: Date
+    monthlyClaim: Date
+    yearlyClaim: Date
     pointsGiven: number
     pointsRecieved: number
     pointsClaimed: number
@@ -112,6 +114,14 @@ const userSchema = new Schema({
         default: null
     },
     weeklyClaim: {
+        type: Date,
+        default: null
+    },
+    monthlyClaim: {
+        type: Date,
+        default: null
+    },
+    yearlyClaim: {
         type: Date,
         default: null
     },

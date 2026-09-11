@@ -1,28 +1,18 @@
 import { userMutexes } from "..";
-import { claimByName, claimNames, isClaimName } from "../util/claimUtil";
+import { claimYearly } from "../util/claimUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import noMutexErrorMessage from "../util/noMutexErrorMessage";
 
-
-const claim: ICommand = {
-    name: 'claim',
-    category: 'claim stuff',
+const yearly: ICommand = {
+    name: 'yearly',
+    category: 'claim yearly',
     description: 'claim points',
-    expectedArgs: '<type to claim>',
-    minArgs: 1,
-    maxArgs: 1,
     cooldown: '3s',
     callback: async (options: ICallback) => {
-        const { message, args } = options
+        const { message } = options
 
         if (!(message.channel.type === "GUILD_TEXT")) {
             message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
-
-        const claimName = args[0].toLowerCase()
-        if (!isClaimName(claimName)) {
-            message.reply({content: `${args[0]} ain a valid claim. Types: \n\`\`\`${claimNames().join(', ')}\`\`\``})
             return
         }
 
@@ -34,9 +24,9 @@ const claim: ICommand = {
             return
         }
         userMutex.runExclusive(async() => {
-            await claimByName(id, message, claimName)
+            await claimYearly(id, message)
         }).catch(() => {})
     }
 }
 
-export default claim
+export default yearly

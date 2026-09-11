@@ -46,10 +46,6 @@ const points: ICommand = {
             const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
             const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
 
-            const bpPF = (user.betsWon + user.betsLost) > 0 ? (Math.round(((user.betPointsLost + user.betPointsWon) / (user.betsWon + user.betsLost)) * 10) / 10).toFixed(1) : 0
-            const bpPL = user.betsLost > 0 ? (Math.round((user.betPointsLost / user.betsLost) * 10) / 10).toFixed(1) : 0
-            const bpPW = user.betsWon > 0 ? (Math.round((user.betPointsWon / user.betsWon) * 10) / 10).toFixed(1) : 0
-
             const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
             const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
             const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
@@ -90,11 +86,6 @@ Avg Bets        ${wpPF.toLocaleString('en-US')} Avg Bet / ${wpPW.toLocaleString(
 R P S           ${(user.rpsWon+user.rpsLost).toLocaleString('en-US')} Total / ${user.rpsWon.toLocaleString('en-US')} Won / ${user.rpsLost.toLocaleString('en-US')} Lost
 Returns         ${(user.rpsPointsWon+user.rpsPointsLost).toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Won / ${user.rpsPointsLost.toLocaleString('en-US')} Lost
 Avg Bets        ${rpPF.toLocaleString('en-US')} Avg Bet / ${rpPW.toLocaleString('en-US')} Avg Win / ${rpPL.toLocaleString('en-US')} Avg Loss
-
-Bets            ${(user.betsWon+user.betsLost).toLocaleString('en-US')} Total / ${user.betsWon.toLocaleString('en-US')} Won / ${user.betsLost.toLocaleString('en-US')} Lost
-Returns         ${(user.betPointsWon+user.betPointsLost).toLocaleString('en-US')} Total / ${user.betPointsWon.toLocaleString('en-US')} Won / ${user.betPointsLost.toLocaleString('en-US')} Lost
-Avg Bets        ${bpPF.toLocaleString('en-US')} Avg Bet / ${bpPW.toLocaleString('en-US')} Avg Win / ${bpPL.toLocaleString('en-US')} Avg Loss
-Bets Opened     ${user.betsOpened.toLocaleString('en-US')}
 \`\`\``
             })
         }).catch(() => {})
