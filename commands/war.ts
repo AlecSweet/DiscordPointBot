@@ -2,11 +2,12 @@ import { Mutex, withTimeout } from "async-mutex";
 import { userMutexes } from "..";
 import { deleteWar, getWar, insertWar, updateWar } from "../db/war";
 import isValidUserArg from "../util/isValidUserArg";
-import getUser, { addPoints, incUser } from "../util/userUtil";
+import { settleUser, inc, updateUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import getRandomValues from 'get-random-values'
 import { cancelWar } from "../util/warUtil";
 import { assignDustedRole } from "../events/assignMostPointsRole";
+import noMutexErrorMessage from "../util/noMutexErrorMessage";
 
 const war: ICommand = {
     name: 'war',
@@ -53,13 +54,13 @@ const war: ICommand = {
 
         const userMutex = userMutexes.get(message.author.id)
         if(!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: noMutexErrorMessage})
             return
         }
 
         let tempPoints = 0
         const failed = await userMutex.runExclusive(async(): Promise<number> => {
-            const user = await getUser(message.author.id)
+            const user = await settleUser(message.author.id)
 
             if (user.points < 1) {
                 await message.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
@@ -67,7 +68,7 @@ const war: ICommand = {
             }     
 
             await insertWar({ownerId: user.id, ownerBet: user.points, startDate: new Date()})
-            await addPoints(user.id, -user.points)
+            await updateUser(user.id, {points: inc(-user.points)})
             tempPoints = user.points
             return 1
         }).catch(async (err):Promise<number> => { 
@@ -123,13 +124,13 @@ const war: ICommand = {
 
                     const targetMutex = userMutexes.get(i.user.id)
                     if(!targetMutex) {
-                        i.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+                        i.reply({content: noMutexErrorMessage})
                         return
                     }
                     let targetUser
                     let aP
                     await targetMutex.runExclusive(async() => {
-                        targetUser = await getUser(i.user.id)
+                        targetUser = await settleUser(i.user.id)
 
                         if (targetUser.points < 1) {
                             await i.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
@@ -137,7 +138,7 @@ const war: ICommand = {
                         }                
                         
                         await updateWar(message.author.id, {acceptId: targetUser.id, acceptBet: targetUser.points })
-                        await incUser(targetUser.id, {points: -targetUser.points})
+                        await updateUser(targetUser.id, {points: inc(-targetUser.points)})
                         aP = targetUser.points
                     })
                     
@@ -190,16 +191,16 @@ const war: ICommand = {
                     })
 
                     if (oP <= 0) {
-                        await incUser(targetUser.id, {points: aP, warPointsWon: oPInital, warsWon: 1})
-                        await incUser(message.author.id, {warPointsLost: oPInital, warsLost: 1})
+                        await updateUser(targetUser.id, {points: inc(aP), warPointsWon: inc(oPInital), warsWon: inc(1)})
+                        await updateUser(message.author.id, {warPointsLost: inc(oPInital), warsLost: inc(1)})
                         await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${message.author.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${targetUser.id}> won ${oPInital} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
                         await deleteWar(message.author.id)
                         if (oPInital >= 100) {
                             await assignDustedRole(guild, message.author.id)
                         }
                     } else {
-                        await incUser(message.author.id, {points: oP, warPointsWon: apInital, warsWon: 1})
-                        await incUser(targetUser.id, {warPointsLost: apInital, warsLost: 1})
+                        await updateUser(message.author.id, {points: inc(oP), warPointsWon: inc(apInital), warsWon: inc(1)})
+                        await updateUser(targetUser.id, {warPointsLost: inc(apInital), warsLost: inc(1)})
                         await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${targetUser.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${message.author.id}> won ${apInital} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
                         await deleteWar(message.author.id)
                         if (apInital >= 100) {

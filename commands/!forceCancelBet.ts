@@ -1,3 +1,7 @@
+// Disabled: the bet feature is shelved. Payouts here relied on addPointsAndAccrue,
+// which was removed when accruePoints was narrowed to accrual only. The leading "!"
+// in the filename keeps the WOKCommands loader from registering the command.
+/*
 import betModel from "../db/bet";
 import { returnPointsDeleteBet } from "../util/betUtil";
 import { ICallback, ICommand } from "../wokTypes";
@@ -36,3 +40,4 @@ const forceCancelBet: ICommand = {
 }
 
 export default forceCancelBet
+*/

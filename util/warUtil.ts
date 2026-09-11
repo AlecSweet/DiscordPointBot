@@ -1,5 +1,5 @@
 import warModel, { deleteWar, IwarRet } from "../db/war";
-import { incUser } from "./userUtil";
+import { inc, updateUser } from "./userUtil";
 
 export const checkAndCancelMaroonedWars = async () => {
     const wars = await warModel.find({})
@@ -15,10 +15,10 @@ export const checkAndCancelMaroonedWars = async () => {
 }
 
 export const cancelWar = async (ownerId: string, war: IwarRet) => {
-    await incUser(ownerId, {points: war.ownerBet})
+    await updateUser(ownerId, {points: inc(war.ownerBet)})
 
     if (war.acceptId !== '') {
-        await incUser(war.acceptId, {points: war.acceptBet})
+        await updateUser(war.acceptId, {points: inc(war.acceptBet)})
     }
     await deleteWar(ownerId)
 }

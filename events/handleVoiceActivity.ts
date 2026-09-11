@@ -1,7 +1,7 @@
 import { Guild, VoiceState } from "discord.js"
 import userModel from "../db/user"
 import * as dotenv from "dotenv"
-import { disableUserActivityAndAccruePoints, getUserNoAccrue, updateUser } from "../util/userUtil"
+import { disableUserActivity, startUserActivity } from "../util/userUtil"
 import { getCurrentGuildInfo, ICurrentGuildInfo } from "../db/guildInfo"
 dotenv.config()
 
@@ -16,12 +16,9 @@ const handleVoiceActivity = async (oldState: VoiceState, newState: VoiceState) =
     const guildInfo = await getCurrentGuildInfo()
 
     if (isActive(newState, guildInfo)) {
-        const user = await getUserNoAccrue(newState.id)
-        if (!user.activeStartDate) {
-            updateUser(newState.id, {activeStartDate: new Date()})
-        }
+        startUserActivity(newState.id)
     } else if (!isActive(newState, guildInfo)) {
-        disableUserActivityAndAccruePoints(newState.id)
+        disableUserActivity(newState.id)
     }
 }
 
@@ -34,7 +31,7 @@ export const checkInactivity = async (guild: Guild) => {
         try {
             const voiceState = (await guild.members.fetch(member.id)).voice
             if (!isActive(voiceState, guildInfo)) { 
-                disableUserActivityAndAccruePoints(voiceState.id)
+                disableUserActivity(voiceState.id)
             }
         // eslint-disable-next-line no-empty
         } catch(e) {}

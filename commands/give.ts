@@ -1,8 +1,9 @@
 import { userMutexes } from "..";
 import isValidNumberArg from "../util/isValidNumberArg";
 import isValidUserArg from "../util/isValidUserArg";
-import getUser, { addPoints, incUser } from "../util/userUtil";
+import { settleUser, inc, updateUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
+import noMutexErrorMessage from "../util/noMutexErrorMessage";
 
 const give: ICommand = {
     name: 'give',
@@ -32,39 +33,30 @@ const give: ICommand = {
             return
         }
 
-        let points = 0
         const userMutex = userMutexes.get(message.author.id)
         if (!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: noMutexErrorMessage})
             return
         }
-        
-        let failed = false
+
         userMutex.runExclusive(async() => {
-            const user = await getUser(message.author.id)
-            
-            points = args[1].toUpperCase() === 'ALL' ? user.points : Number(args[1])
+            const user = await settleUser(message.author.id)
+
+            const points = args[1].toUpperCase() === 'ALL' ? user.points : Number(args[1])
 
             if (!isValidNumberArg(points)) {
                 message.reply({content: `${points === 0 ? 0 : args[1]} ain a valid gift ${process.env.NOPPERS_EMOJI}`})
-                failed = true
                 return
             }
 
             if (points > user.points) {
                 message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                failed = true
                 return
             }
 
-            const author = await addPoints(user.id, -points)
-            await incUser(author.id, {pointsGiven: points})
+            const author = await updateUser(user.id, {points: inc(-points), pointsGiven: inc(points)})
+            await updateUser(gifteeId, {points: inc(points), pointsRecieved: inc(points)})
             message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
-        }).then(async () => {
-            if (!failed) {
-                const giftee = await addPoints(gifteeId, points)
-                await incUser(giftee.id, {pointsRecieved: points})
-            }
         }).catch((err) => console.log(err))
     }
 }

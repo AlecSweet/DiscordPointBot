@@ -1,4 +1,4 @@
-import getUser from "../util/userUtil";
+import { settleUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
@@ -10,6 +10,7 @@ import isValidNumberArg from "../util/isValidNumberArg";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
+import noMutexErrorMessage from "../util/noMutexErrorMessage";
 dotenv.config()
 
 const COUNTDOWN_MS = 3000
@@ -34,11 +35,11 @@ const flip: ICommand = {
 
         const userMutex = userMutexes.get(message.author.id)
         if(!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: noMutexErrorMessage})
             return
         }
         await userMutex.runExclusive(async() => {
-            const user = await getUser(message.author.id)
+            const user = await settleUser(message.author.id)
 
             const flipAll = args[0].toUpperCase() === 'ALL'
             const points = flipAll ? user.points : Number(args[0])

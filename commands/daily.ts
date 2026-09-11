@@ -2,6 +2,7 @@
 import { userMutexes } from "..";
 import { claimDaily } from "../util/claimUtil";
 import { ICallback, ICommand } from "../wokTypes";
+import noMutexErrorMessage from "../util/noMutexErrorMessage";
 
 const daily: ICommand = {
     name: 'daily',
@@ -20,7 +21,7 @@ const daily: ICommand = {
 
         const userMutex = userMutexes.get(id)
         if (!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: noMutexErrorMessage})
             return
         }
         userMutex.runExclusive(async() => {

@@ -1,7 +1,7 @@
 import { Guild } from "discord.js";
 import { IUser } from "../db/user";
 import { assignDustedRole } from "../events/assignMostPointsRole";
-import { addPoints, updateUser } from "./userUtil";
+import { inc, set, updateUser } from "./userUtil";
 
 export const checkAndAssignDusted = async (guild: Guild, user: IUser, bet: number) => {
     if (bet >= 100 && user.points < 5) {
@@ -9,51 +9,29 @@ export const checkAndAssignDusted = async (guild: Guild, user: IUser, bet: numbe
     }
 }
 
+const nextStreak = (current: number, direction: 1 | -1): number => {
+    const continuesStreak = Math.sign(current) === direction
+    return continuesStreak ? current + direction : direction
+}
+
 export const updateUserWin = async (user: IUser, points: number): Promise<IUser> => {
-    await addPoints(user.id, points)
-
-    let newMaxStreak = {}
-    let flipStreak = user.flipStreak
-    if (flipStreak < 0) {  
-        if (Math.abs(flipStreak) > user.maxLossStreak) {
-            newMaxStreak = {maxLossStreak: Math.abs(flipStreak)}
-        }
-        flipStreak = 0
-    } else if (flipStreak + 1 > user.maxWinStreak) {
-        newMaxStreak = {maxWinStreak: flipStreak + 1}
-    }
-
-    return await updateUser(
-        user.id, 
-        {
-            pointsWon: user.pointsWon + points, 
-            flipsWon: user.flipsWon + 1, 
-            ...(newMaxStreak), 
-            flipStreak: flipStreak + 1
-        }
-    )
+    const flipStreak = nextStreak(user.flipStreak, 1)
+    return await updateUser(user.id, {
+        points: inc(points),
+        pointsWon: inc(points),
+        flipsWon: inc(1),
+        flipStreak: set(flipStreak),
+        maxWinStreak: set(Math.max(user.maxWinStreak, flipStreak))
+    })
 }
 
 export const updateUserLoss = async (user: IUser, points: number): Promise<IUser> => {
-    await addPoints(user.id, -points)
-
-    let newMaxStreak = {}
-    let flipStreak = user.flipStreak
-    if (flipStreak > 0) {  
-        if (flipStreak > user.maxWinStreak) {
-            newMaxStreak = {maxWinStreak: flipStreak}
-        }
-        flipStreak = 0
-    } else if (Math.abs(flipStreak - 1) > user.maxLossStreak) {
-        newMaxStreak = {maxLossStreak: Math.abs(flipStreak - 1)}
-    }
-    return await updateUser(
-        user.id, 
-        {
-            pointsLost: user.pointsLost + points, 
-            flipsLost: user.flipsLost + 1, 
-            ...(newMaxStreak), 
-            flipStreak: flipStreak - 1
-        }
-    )
+    const flipStreak = nextStreak(user.flipStreak, -1)
+    return await updateUser(user.id, {
+        points: inc(-points),
+        pointsLost: inc(points),
+        flipsLost: inc(1),
+        flipStreak: set(flipStreak),
+        maxLossStreak: set(Math.max(user.maxLossStreak, -flipStreak))
+    })
 }

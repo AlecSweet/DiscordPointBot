@@ -1,9 +1,13 @@
+// Disabled: the bet feature is shelved. Payouts here relied on addPointsAndAccrue,
+// which was removed when accruePoints was narrowed to accrual only. The leading "!"
+// in the filename keeps the WOKCommands loader from registering the command.
+/*
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import isValidNumberArg from "../util/isValidNumberArg";
 import betModel, { deleteBet, getBet, insertBet, IUserBet } from "../db/bet";
 import { Message, MessageSelectOptionData, ThreadChannel } from "discord.js";
-import getUser, { addPoints, addPointsAndAccrue, incUser } from "../util/userUtil";
+import { settleUser, addPoints, addPointsAndAccrue, incUser } from "../util/userUtil";
 import { userMutexes } from "..";
 import { getOdds, getPayouts, returnPointsDeleteBet } from "../util/betUtil";
 dotenv.config()
@@ -257,7 +261,7 @@ const manageUserBets = async (message: Message, currentBets: IUserBet[], outcome
         }
         const returnVal: IManageUserBetReturn = {outcomeIndex: -1, ubMessage: null}
         await userMutex.runExclusive(async() => {
-            const user = await getUser(message.author.id)
+            const user = await settleUser(message.author.id)
             if (user) {
                 const points = message.content.toUpperCase() === 'ALL' ? user.points : Number(message.content)
                 if (!isValidNumberArg(points)) {
@@ -352,7 +356,7 @@ const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: numb
                     await incUser(payout.userId, {betsLost: 1, betPointsLost: Math.abs(payout.pointsToAdd)})
                     await thread.send({content:`<@${user.id}> got ${Math.abs(payout.pointsToAdd)} points back ${process.env.SMODGE_EMOJI} and now has ${user.points} points`})
                 } else {
-                    const user = await getUser(payout.userId)
+                    const user = await settleUser(payout.userId)
                     await incUser(payout.userId, {betsLost: 1, betPointsLost: Math.abs(payout.pointsToAdd)})
                     await thread.send({content:`<@${user.id}> lost it all and now has ${user.points} points ${process.env.SMODGE_EMOJI}`})
                 }
@@ -361,3 +365,4 @@ const payoutPointsAndDeleteBet = async (thread: ThreadChannel, numOutcomes: numb
     }
     await deleteBet(thread.id)
 }
+*/

@@ -1,3 +1,4 @@
+/*
 import { Guild } from "discord.js"
 import betModel, { deleteBet, getBet, IUserBet } from "../db/bet"
 import { addPoints } from "./userUtil"
@@ -139,3 +140,4 @@ export const checkAndCancelMaroonedBets = async (guild: Guild) => {
         });
     }
 }
+*/

@@ -1,244 +1,98 @@
-import userModel, { IUser, IUserUpdates } from "../db/user"
+import userModel, { IncOp, IUser, IUserUpdate, SetOp } from "../db/user"
 
-const accruePoints = async (user: IUser, disableActivity: boolean): Promise<IUser> => {
-    if (user.activeStartDate) {
-        const currentDate = new Date()
-        const timeDifference = Math.abs(currentDate.getTime() - user.activeStartDate.getTime())
+const MS_PER_MINUTE = 60000
+const SECONDS_PER_MINUTE = 60
 
-        const msLeftOver = timeDifference % 60000
-        const newActiveStartDate = new Date(currentDate.getTime() - msLeftOver)
+const elapsedMsSinceStart = {$max: [0, {$subtract: ["$$NOW", {$ifNull: ["$activeStartDate", "$$NOW"]}]}]}
+const accruedMinutesSinceStart = {$floor: {$divide: [elapsedMsSinceStart, MS_PER_MINUTE]}}
+const addAccruedPoints = {$add: [{$ifNull: ["$points", 0]}, "$accruedMinutes"]}
+const addSecondsActive = {$add: [{$ifNull: ["$secondsActive", 0]}, {$multiply: ["$accruedMinutes", SECONDS_PER_MINUTE]}]}
+const advanceActiveStartDate = {$add: ["$activeStartDate", {$multiply: ["$accruedMinutes", MS_PER_MINUTE]}]}
 
-        const minutesActive = Math.floor(timeDifference / 60000)
-        await incUser(user.id, {points: minutesActive, secondsActive: minutesActive * 60})
-        user = await updateUser(user.id, {activeStartDate: disableActivity ? null : newActiveStartDate})
-    }
+const accrualPipeline = (disableActivity: boolean) => [
+    {$set: {accruedMinutes: accruedMinutesSinceStart}},
+    {$set: {
+        points: addAccruedPoints,
+        secondsActive: addSecondsActive,
+        activeStartDate: disableActivity ? null : advanceActiveStartDate
+    }},
+    {$unset: "accruedMinutes"}
+]
 
-    return user
+const accruePoints = async (id: string, disableActivity = false): Promise<IUser> => {
+    const accrued = await userModel
+        .findOneAndUpdate({id: id}, accrualPipeline(disableActivity), {new: true})
+        .lean()
+    return accrued ?? await insertUser(id)
 }
 
-export const addPoints = async(id: string, points: number): Promise<IUser> => {
-    return await incUser(id, {points: points})
+export const disableUserActivity = (id: string): Promise<IUser> => accruePoints(id, true)
+
+export const startUserActivity = async (id: string): Promise<IUser> => {
+    const user = await getOrInsert(id)
+    if (user.activeStartDate) return user
+
+    const started = await userModel
+        .findOneAndUpdate({id: id, activeStartDate: null}, [{$set: {activeStartDate: "$$NOW"}}], {new: true})
+        .lean()
+    return started ?? await getOrInsert(id)
 }
 
-export const addPointsAndAccrue = async(id: string, points: number): Promise<IUser> => {
-    const user = await incUser(id, {points: points})
-    return await accruePoints(user, false)
-}
-
-export const disableUserActivityAndAccruePoints = async (id: string): Promise<IUser> => {
-    const user = await updateUser(id, {cooldown: new Date()})
-    return await accruePoints(user, true)
-}
-
-const getUser = async (id: string): Promise<IUser> => {
-    const user = await getUserNoAccrue(id)
-    return await accruePoints(user, false)
-}
-
-export default getUser
+export const settleUser = (id: string): Promise<IUser> => accruePoints(id)
 
 export const getAllUsers = async (): Promise<IUser[]> => {
-    const findResult = await userModel.find()
-    const users = findResult.map(userEntry => {
-        return {
-            id: userEntry.id, 
-            points: userEntry.points, 
-            activeStartDate: userEntry.activeStartDate,
-            flipsLost: userEntry.flipsLost,
-            flipsWon: userEntry.flipsWon,
-            pointsWon: userEntry.pointsWon,
-            pointsLost: userEntry.pointsLost,
-            secondsActive: userEntry.secondsActive,
-            cooldown: userEntry.cooldown,
-            flipStreak: userEntry.flipStreak,
-            maxWinStreak: userEntry.maxWinStreak,
-            maxLossStreak: userEntry.maxLossStreak,
-            dailyClaim: userEntry.dailyClaim,
-            weeklyClaim: userEntry.weeklyClaim,
-            pointsGiven: userEntry.pointsGiven,
-            pointsRecieved: userEntry.pointsRecieved,
-            pointsClaimed: userEntry.pointsClaimed,
-            betPointsWon: userEntry.betPointsWon,
-            betPointsLost: userEntry.betPointsLost,
-            betsWon: userEntry.betsWon,
-            betsLost: userEntry.betsLost,
-            betsOpened:  userEntry.betsOpened,
-            challengePointsWon: userEntry.challengePointsWon,
-            challengePointsLost: userEntry.challengePointsLost,
-            challengesWon: userEntry.challengesWon,
-            challengesLost: userEntry.challengesLost,
-            warPointsWon: userEntry.warPointsWon,
-            warPointsLost: userEntry.warPointsLost,
-            warsWon:userEntry.warsWon,
-            warsLost: userEntry.warsLost,
-            rpsPointsWon: userEntry.rpsPointsWon,
-            rpsPointsLost: userEntry.rpsPointsLost,
-            rpsWon:userEntry.rpsWon,
-            rpsLost: userEntry.rpsLost,
-        }
-    })
-    return users
+    return await userModel.find().lean()
 }
 
-export const getUserNoAccrue = async (id: string): Promise<IUser> => {
-    const findResult = await userModel.findOne({id})
-    const userEntry = findResult ? findResult : await insertUser(id)
+export const inc = (by: number): IncOp => ({op: "inc", by: by})
+export const set = <V>(to: V): SetOp<V> => ({op: "set", to: to})
+
+export const updateUser = async (id: string, update: IUserUpdate): Promise<IUser> => {
+    const mongoUpdate = toMongoUpdate(update)
+    if (Object.keys(mongoUpdate).length === 0) return await getOrInsert(id)
+
+    const updated = await userModel.findOneAndUpdate({id: id}, mongoUpdate, {new: true}).lean()
+    if (updated) return updated
+
+    await insertUser(id)
+    const retried = await userModel.findOneAndUpdate({id: id}, mongoUpdate, {new: true}).lean()
+    if (!retried) throw new Error(`updateUser: user "${id}" vanished between insert and update`)
+    return retried
+}
+
+const toMongoUpdate = (update: IUserUpdate) => {
+    const $set: Record<string, unknown> = {}
+    const $inc: Record<string, number> = {}
+
+    for (const [field, op] of Object.entries(update) as [string, IncOp | SetOp<unknown> | undefined][]) {
+        if (op === undefined) continue
+        if (op.op === "inc") { $inc[field] = op.by; continue }
+        if (op.op === "set") { $set[field] = op.to; continue }
+        throw new Error(`updateUser: "${field}" was given a raw value instead of inc() or set()`)
+    }
+
     return {
-        id: userEntry.id, 
-        points: userEntry.points, 
-        activeStartDate: userEntry.activeStartDate,
-        flipsLost: userEntry.flipsLost,
-        flipsWon: userEntry.flipsWon,
-        pointsWon: userEntry.pointsWon,
-        pointsLost: userEntry.pointsLost,
-        secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown,
-        flipStreak: userEntry.flipStreak,
-        maxWinStreak: userEntry.maxWinStreak,
-        maxLossStreak: userEntry.maxLossStreak,
-        dailyClaim: userEntry.dailyClaim,
-        weeklyClaim: userEntry.weeklyClaim,
-        pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed,
-        betPointsWon: userEntry.betPointsWon,
-        betPointsLost: userEntry.betPointsLost,
-        betsWon: userEntry.betsWon,
-        betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened,
-        challengePointsWon: userEntry.challengePointsWon,
-        challengePointsLost: userEntry.challengePointsLost,
-        challengesWon: userEntry.challengesWon,
-        challengesLost: userEntry.challengesLost,
-        warPointsWon: userEntry.warPointsWon,
-        warPointsLost: userEntry.warPointsLost,
-        warsWon:userEntry.warsWon,
-        warsLost: userEntry.warsLost,
-        rpsPointsWon: userEntry.rpsPointsWon,
-        rpsPointsLost: userEntry.rpsPointsLost,
-        rpsWon:userEntry.rpsWon,
-        rpsLost: userEntry.rpsLost,
+        ...(Object.keys($set).length > 0 ? {$set: $set} : {}),
+        ...(Object.keys($inc).length > 0 ? {$inc: $inc} : {})
     }
 }
 
-export const incUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
-    const updateResult = await userModel.findOneAndUpdate({id}, {$inc: {...(updates)}}, {new: true})
-    const userEntry = updateResult ? updateResult : await insertUser(id, updates)
-    return {
-        id, 
-        points: userEntry.points, 
-        activeStartDate: userEntry.activeStartDate,
-        flipsLost: userEntry.flipsLost,
-        flipsWon: userEntry.flipsWon,
-        pointsWon: userEntry.pointsWon,
-        pointsLost: userEntry.pointsLost,
-        secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown,
-        flipStreak: userEntry.flipStreak,
-        maxWinStreak: userEntry.maxWinStreak,
-        maxLossStreak: userEntry.maxLossStreak,
-        dailyClaim: userEntry.dailyClaim,
-        weeklyClaim: userEntry.weeklyClaim,
-        pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed,
-        betPointsWon: userEntry.betPointsWon,
-        betPointsLost: userEntry.betPointsLost,
-        betsWon: userEntry.betsWon,
-        betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened,
-        challengePointsWon: userEntry.challengePointsWon,
-        challengePointsLost: userEntry.challengePointsLost,
-        challengesWon: userEntry.challengesWon,
-        challengesLost: userEntry.challengesLost,
-        warPointsWon: userEntry.warPointsWon,
-        warPointsLost: userEntry.warPointsLost,
-        warsWon:userEntry.warsWon,
-        warsLost: userEntry.warsLost,
-        rpsPointsWon: userEntry.rpsPointsWon,
-        rpsPointsLost: userEntry.rpsPointsLost,
-        rpsWon:userEntry.rpsWon,
-        rpsLost: userEntry.rpsLost,
+const getOrInsert = async (id: string): Promise<IUser> => {
+    const found = await userModel.findOne({id: id}).lean()
+    return found ?? await insertUser(id)
+}
+
+const insertUser = async (id: string): Promise<IUser> => {
+    try {
+        return (await userModel.create({id: id})).toObject()
+    } catch (error) {
+        if (!isDuplicateKeyError(error)) throw error
+        const existing = await userModel.findOne({id: id}).lean()
+        if (!existing) throw new Error(`insertUser: duplicate key for "${id}" but no document found`)
+        return existing
     }
 }
 
-export const updateUser = async (id: string, updates: IUserUpdates): Promise<IUser> => {
-    const updateResult = await userModel.findOneAndUpdate({id}, {$set: {...(updates)}}, {new: true})
-    const userEntry = updateResult ? updateResult : await insertUser(id, updates)
-    return {
-        id, 
-        points: userEntry.points, 
-        activeStartDate: userEntry.activeStartDate,
-        flipsLost: userEntry.flipsLost,
-        flipsWon: userEntry.flipsWon,
-        pointsWon: userEntry.pointsWon,
-        pointsLost: userEntry.pointsLost,
-        secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown,
-        flipStreak: userEntry.flipStreak,
-        maxWinStreak: userEntry.maxWinStreak,
-        maxLossStreak: userEntry.maxLossStreak,
-        dailyClaim: userEntry.dailyClaim,
-        weeklyClaim: userEntry.weeklyClaim,
-        pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed,
-        betPointsWon: userEntry.betPointsWon,
-        betPointsLost: userEntry.betPointsLost,
-        betsWon: userEntry.betsWon,
-        betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened,
-        challengePointsWon: userEntry.challengePointsWon,
-        challengePointsLost: userEntry.challengePointsLost,
-        challengesWon: userEntry.challengesWon,
-        challengesLost: userEntry.challengesLost,
-        warPointsWon: userEntry.warPointsWon,
-        warPointsLost: userEntry.warPointsLost,
-        warsWon:userEntry.warsWon,
-        warsLost: userEntry.warsLost,
-        rpsPointsWon: userEntry.rpsPointsWon,
-        rpsPointsLost: userEntry.rpsPointsLost,
-        rpsWon:userEntry.rpsWon,
-        rpsLost: userEntry.rpsLost,
-    }
-}
-
-const insertUser = async (id: string, updates?: IUserUpdates): Promise<IUser> => {
-    const userEntry = await new userModel({id, ...(updates !== undefined ? updates : {})}).save()
-    return {
-        id: userEntry.id, 
-        points: userEntry.points, 
-        activeStartDate: userEntry.activeStartDate,
-        flipsLost: userEntry.flipsLost,
-        flipsWon: userEntry.flipsWon,
-        pointsWon: userEntry.pointsWon,
-        pointsLost: userEntry.pointsLost,
-        secondsActive: userEntry.secondsActive,
-        cooldown: userEntry.cooldown,
-        flipStreak: userEntry.flipStreak,
-        maxWinStreak: userEntry.maxWinStreak,
-        maxLossStreak: userEntry.maxLossStreak,
-        dailyClaim: userEntry.dailyClaim,
-        weeklyClaim: userEntry.weeklyClaim,
-        pointsGiven: userEntry.pointsGiven,
-        pointsRecieved: userEntry.pointsRecieved,
-        pointsClaimed: userEntry.pointsClaimed,
-        betPointsWon: userEntry.betPointsWon,
-        betPointsLost: userEntry.betPointsLost,
-        betsWon: userEntry.betsWon,
-        betsLost: userEntry.betsLost,
-        betsOpened:  userEntry.betsOpened,
-        challengePointsWon: userEntry.challengePointsWon,
-        challengePointsLost: userEntry.challengePointsLost,
-        challengesWon: userEntry.challengesWon,
-        challengesLost: userEntry.challengesLost,
-        warPointsWon: userEntry.warPointsWon,
-        warPointsLost: userEntry.warPointsLost,
-        warsWon:userEntry.warsWon,
-        warsLost: userEntry.warsLost,
-        rpsPointsWon: userEntry.rpsPointsWon,
-        rpsPointsLost: userEntry.rpsPointsLost,
-        rpsWon:userEntry.rpsWon,
-        rpsLost: userEntry.rpsLost,
-    }
+const isDuplicateKeyError = (error: unknown): boolean => {
+    return typeof error === "object" && error !== null && (error as {code?: number}).code === 11000
 }

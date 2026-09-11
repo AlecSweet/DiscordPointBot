@@ -1,7 +1,8 @@
 import { userMutexes } from "..";
 import isValidUserArg from "../util/isValidUserArg";
-import getUser from "../util/userUtil";
+import { settleUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
+import noMutexErrorMessage from "../util/noMutexErrorMessage";
 
 const points: ICommand = {
     name: 'stats',
@@ -30,11 +31,11 @@ const points: ICommand = {
 
         const userMutex = userMutexes.get(id)
         if (!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: noMutexErrorMessage})
             return
         }
         userMutex.runExclusive(async() => {
-            const user = await getUser(id)
+            const user = await settleUser(id)
             const days = Math.floor(user.secondsActive / 86400)
             const secLeftAfterDays = user.secondsActive % 86400
             const hours = Math.floor(secLeftAfterDays / 3600)

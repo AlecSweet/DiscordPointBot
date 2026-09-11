@@ -1,4 +1,4 @@
-import getUser from "../util/userUtil";
+import { settleUser } from "../util/userUtil";
 import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
@@ -9,6 +9,7 @@ import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/fli
 import isValidNumberArg from "../util/isValidNumberArg";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import sleep from "../util/sleep";
+import noMutexErrorMessage from "../util/noMutexErrorMessage";
 dotenv.config()
 
 const MAX_WINS = 100
@@ -34,12 +35,12 @@ const martingale: ICommand = {
 
         const userMutex = userMutexes.get(message.author.id)
         if(!userMutex) {
-            message.reply({content: `Not yet bozo ${process.env.NOPPERS_EMOJI}`})
+            message.reply({content: noMutexErrorMessage})
             return
         }
 
         await userMutex.runExclusive(async() => {
-            const user = await getUser(message.author.id)
+            const user = await settleUser(message.author.id)
 
             const baseBet = Number(args[0])
             if (!isValidNumberArg(baseBet)) {

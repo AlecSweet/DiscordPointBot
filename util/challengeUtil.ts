@@ -1,5 +1,5 @@
 import challengeModel, { deleteChallenge, IChallengeRet } from "../db/challenge";
-import { incUser } from "./userUtil";
+import { inc, updateUser } from "./userUtil";
 
 export const checkAndCancelMaroonedChallenges = async () => {
     const challenges = await challengeModel.find({})
@@ -15,10 +15,10 @@ export const checkAndCancelMaroonedChallenges = async () => {
 }
 
 export const cancelChallenge = async (ownerId: string, challenge: IChallengeRet) => {
-    await incUser(ownerId, {points: challenge.ownerBet})
+    await updateUser(ownerId, {points: inc(challenge.ownerBet)})
 
     if (challenge.acceptId !== '') {
-        await incUser(challenge.acceptId, {points: challenge.acceptBet})
+        await updateUser(challenge.acceptId, {points: inc(challenge.acceptBet)})
     }
     await deleteChallenge(ownerId)
 }

@@ -31,7 +31,6 @@ const serverStats: ICommand = {
                 pointsWon: aggUser.pointsWon + curUser.pointsWon ,
                 pointsLost: aggUser.pointsLost + curUser.pointsLost ,
                 secondsActive: aggUser.secondsActive + curUser.secondsActive ,
-                cooldown: curUser.cooldown ,
                 flipStreak: aggUser.flipStreak + curUser.flipStreak ,
                 maxWinStreak: aggUser.maxWinStreak + curUser.maxWinStreak ,
                 maxLossStreak: aggUser.maxLossStreak + curUser.maxLossStreak ,

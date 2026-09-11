@@ -6,7 +6,6 @@ import * as dotenv from "dotenv"
 import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
 import { CronJob } from 'cron';
 import { Mutex, MutexInterface, withTimeout } from "async-mutex";
-import { checkAndCancelMaroonedBets } from "./util/betUtil";
 import { checkAndCancelMaroonedChallenges } from "./util/challengeUtil";
 import { checkAndCancelMaroonedWars } from "./util/warUtil";
 import assignMostPointsRole from "./events/assignMostPointsRole";
@@ -57,7 +56,6 @@ client.on('ready', async () => {
 
     const checkInactiveMembers = new CronJob('0 */5 * * * *', async function() {
         await checkInactivity(currentGuild).catch((err) => console.log(err))
-        await checkAndCancelMaroonedBets(currentGuild).catch((err) => console.log(err))
         await checkAndCancelMaroonedChallenges().catch((err) => console.log(err))
         await checkAndCancelMaroonedWars().catch((err) => console.log(err))
         await checkAndCancelMaroonedRps().catch((err) => console.log(err))
