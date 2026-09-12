@@ -179,8 +179,8 @@ const leaderboardAggregates = {
     rpsPointsWon: [{$sort:{rpsPointsWon:-1}}],
     rpsPointsLost: [{$sort:{rpsPointsLost:-1}}],
     pointsRps: [
-        {$addFields: { pointsChallenged: { $add: [ "$rpsPointsWon", "$rpsPointsLost"]}}},
-        {$sort: {pointsChallenged:-1}},
+        {$addFields: { pointsRps: { $add: [ "$rpsPointsWon", "$rpsPointsLost"]}}},
+        {$sort: {pointsRps:-1}},
     ],
     rpsWon: [{$sort:{rpsWon:-1}}],
     rpsLost: [{$sort:{rpsLost:-1}}],
@@ -215,7 +215,7 @@ Given           FlipsLost        ChallengesLost         RpsLost
 Received        FlipPointsWon    ChallengePointsWon     RpsPointsWon
 PointsClaimed   FlipPointsLost   ChallengePointsLost    RpsPointsLost
 MostDebt        PointsFlipped    PointsChallenged       PointsRps
-Least Debt      Unluckiest
+LeastDebt       Unluckiest
                 Luckiest         Wars
                 WorstFlipper     WarsWon
                 BestFlipper      WarsLost

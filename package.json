@@ -5,8 +5,13 @@
   "main": "index.ts",
   "scripts": {
     "start": "ts-node index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "ts-node test/userUtil.test.ts",
     "lint": "eslint . --ext .ts"
+  },
+  "config": {
+    "mongodbMemoryServer": {
+      "disablePostinstall": "true"
+    }
   },
   "keywords": [],
   "author": "",
@@ -27,6 +32,7 @@
     "@types/cron": "^1.7.3",
     "@typescript-eslint/eslint-plugin": "^5.9.1",
     "@typescript-eslint/parser": "^5.9.1",
-    "eslint": "^8.7.0"
+    "eslint": "^8.7.0",
+    "mongodb-memory-server": "^10.4.3"
   }
 }
