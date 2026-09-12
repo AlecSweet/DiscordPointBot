@@ -374,7 +374,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("no reply sent", exact.replies.length, 0)
 }},
 
-{name: "parsePoints: \"some\" honours the minimum", fn: async () => {
+// A minimum stops someone deliberately naming a trivial wager. "some" hands the
+// choice to the bot, so it draws across the whole stack and skips the floor.
+{name: "parsePoints: \"some\" ignores the minimum and draws from 1", fn: async () => {
     await seed("min2", {points: 1000})
     const user = await settleUser("min2")
     const msg = fakeMessage()
@@ -384,13 +386,14 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         drawn.push(await parsePoints("some", user, msg.message, "bet", 200) as number)
     }
 
-    check("no draw falls under the minimum", drawn.every(p => p >= 200), `lowest was ${Math.min(...drawn)}`)
+    check("draws reach under the minimum", drawn.some(p => p < 200), `lowest was ${Math.min(...drawn)}`)
+    check("no draw falls under 1", drawn.every(p => p >= 1), `lowest was ${Math.min(...drawn)}`)
     check("no draw exceeds the stack", drawn.every(p => p <= 1000), `highest was ${Math.max(...drawn)}`)
     check("draws actually vary", new Set(drawn).size > 1, "every draw was identical")
     eq("no reply sent", msg.replies.length, 0)
 }},
 
-{name: "parsePoints: a stack under the minimum is refused for \"all\" and \"some\"", fn: async () => {
+{name: "parsePoints: a stack under the minimum is refused for \"all\" but not \"some\"", fn: async () => {
     await seed("min3", {points: 150})
     const user = await settleUser("min3")
 
@@ -399,8 +402,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("named the minimum", all.replies[0]?.includes("bet at least 200 points"), all.replies[0])
 
     const some = fakeMessage()
-    eq("some rejected", await parsePoints("some", user, some.message, "bet", 200), undefined)
-    check("told how much they have", some.replies[0]?.includes("You only got 150 points"), some.replies[0])
+    const drawn = await parsePoints("some", user, some.message, "bet", 200)
+    check("some allowed under the minimum", drawn !== undefined && drawn >= 1 && drawn <= 150, `drew ${drawn}`)
+    eq("no reply sent", some.replies.length, 0)
 }},
 
 {name: "parsePoints: the default minimum leaves small bets alone", fn: async () => {

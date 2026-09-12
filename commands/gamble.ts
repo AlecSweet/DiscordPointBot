@@ -14,6 +14,7 @@ dotenv.config()
 
 const COUNTDOWN_MS = 3000
 const MAX_FLIPS = 50
+const MIN_MULTI_BET_PCT = 0.02
 const FLIPS_PER_ROW = 10
 const WIN = '✅'
 const LOSS = '❌'
@@ -23,19 +24,20 @@ const flip = textCommand({
     aliases: ['f','filp','fipl','lipf','pilf','fpil', 'phillip', 'fip', 'ipfl', 'iflp'],
     category: 'gambling',
     description: 'lose some points',
-    expectedArgs: '<# of points to lose, "all" or "some"> <Optional # of times to flip or "some">',
+    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all" or "some"> <Optional # of times to flip or "some">',
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',
 }, async (ctx) => {
     await withUserLock(ctx.authorId, ctx.message, async (user) => {
-        const points = await parsePoints(ctx.args[0], user, ctx.message, 'bet')
-        if (points === undefined) {
+        const flips = ctx.args[1] ? await parseCount(ctx.args[1], MAX_FLIPS, ctx.message, 'number of flips') : 1
+        if (flips === undefined) {
             return
         }
 
-        const flips = ctx.args[1] ? await parseCount(ctx.args[1], MAX_FLIPS, ctx.message, 'number of flips') : 1
-        if (flips === undefined) {
+        const minBet = flips > 1 ? Math.max(1, Math.ceil(user.points * MIN_MULTI_BET_PCT)) : 1
+        const points = await parsePoints(ctx.args[0], user, ctx.message, 'bet', minBet)
+        if (points === undefined) {
             return
         }
 

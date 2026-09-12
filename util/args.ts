@@ -30,23 +30,24 @@ export const parseTarget = async (arg: string, ctx: ITextContext, options: ITarg
 
 const random = (min: number, max: number): number => max < min ? min : randomInt(min, max + 1)
 
-const amountFor = (arg: string, user: IUser, min: number): number => {
+const amountFor = (arg: string, user: IUser): number => {
     switch (arg.toUpperCase()) {
         case 'ALL': return user.points
-        case 'SOME': return random(min, user.points)
+        case 'SOME': return random(1, user.points)
         default: return Number(arg)
     }
 }
 
 export const parsePoints = async (arg: string, user: IUser, message: Message<boolean>, noun: string, min = 1): Promise<number | undefined> => {
-    const points = amountFor(arg, user, min)
+    const points = amountFor(arg, user)
+    const chosenByUser = arg.toUpperCase() !== 'SOME'
 
     if (!isValidNumberArg(points)) {
         await message.reply({content: `${points === 0 ? 0 : arg} ain a valid ${noun} ${process.env.NOPPERS_EMOJI}`})
         return undefined
     }
 
-    if (points < min) {
+    if (chosenByUser && points < min) {
         await message.reply({content: `${noun} at least ${min} points brokie ${process.env.NOPPERS_EMOJI}`})
         return undefined
     }

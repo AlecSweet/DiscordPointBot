@@ -183,6 +183,44 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("no points moved", (await settleUser("111")).points, 1000)
 }},
 
+{name: "flip: a multi-flip wager under 2% of the stack is refused", fn: async () => {
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["5", "10"], guild: guildWith("111")})
+
+    check("named the minimum", ctx.replies[0]?.includes("at least 20 points"), ctx.replies[0])
+    eq("no points moved", (await settleUser("111")).points, 1000)
+}},
+
+{name: "flip: a random wager is not held to the multi-flip minimum", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["some", "3"], guild: guildWith("111")})
+
+    check("never refused for being under the minimum",
+        !ctx.replies.some(reply => reply.includes("at least")), ctx.replies[0])
+    eq("three flips ran", (await settleUser("111")).flipsWon, 3)
+}},
+
+{name: "flip: a single flip is not held to the multi-flip minimum", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["5"], guild: guildWith("111")})
+
+    eq("the 5 point flip was allowed and won", (await settleUser("111")).points, 1005)
+}},
+
+{name: "flip all: wagering everything always clears the minimum", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 10})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["all", "5"], guild: guildWith("111")})
+
+    eq("10 doubled five times", (await settleUser("111")).points, 320)
+}},
+
 {name: "martingale: a win recovers the whole losing ladder", fn: async () => {
     rollSequence(0, 0, 255)
     await seed("111", {points: 1000})
@@ -214,6 +252,17 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     check("named the minimum", ctx.replies[0]?.includes("at least 10 points"), ctx.replies[0])
     eq("no points moved", (await settleUser("111")).points, 1000)
+}},
+
+{name: "martingale: a random base bet is not held to the 1% minimum", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["some", "1"], guild: guildWith("111")})
+
+    check("never refused for being under the minimum",
+        !ctx.replies.some(reply => reply.includes("at least")), ctx.replies[0])
+    eq("the ladder ran", (await settleUser("111")).flipsWon, 1)
 }},
 
 {name: "give: points leave one side and arrive on the other", fn: async () => {
