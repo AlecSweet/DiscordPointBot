@@ -5,6 +5,7 @@ const SECONDS_PER_MINUTE = 60
 
 const elapsedMsSinceStart = {$max: [0, {$subtract: ["$$NOW", {$ifNull: ["$activeStartDate", "$$NOW"]}]}]}
 const accruedMinutesSinceStart = {$floor: {$divide: [elapsedMsSinceStart, MS_PER_MINUTE]}}
+export const settledPoints = {$add: [{$ifNull: ["$points", 0]}, accruedMinutesSinceStart]}
 const addAccruedPoints = {$add: [{$ifNull: ["$points", 0]}, "$accruedMinutes"]}
 const addSecondsActive = {$add: [{$ifNull: ["$secondsActive", 0]}, {$multiply: ["$accruedMinutes", SECONDS_PER_MINUTE]}]}
 const advanceActiveStartDate = {$add: ["$activeStartDate", {$multiply: ["$accruedMinutes", MS_PER_MINUTE]}]}

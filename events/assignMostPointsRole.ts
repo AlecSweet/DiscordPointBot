@@ -1,5 +1,6 @@
 import { Guild } from "discord.js"
 import userModel from "../db/user"
+import { settledPoints } from "../util/userUtil"
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -8,7 +9,8 @@ const assignMostPointsRole = async (guild: Guild) => {
     const wealthiestRole = guild.roles.cache.get(roleId);
 
     const top = await userModel.aggregate([
-        {$sort:{points:-1}},
+        {$set: {settledPoints: settledPoints}},
+        {$sort: {settledPoints: -1}},
         {$limit: 1}
     ])
 

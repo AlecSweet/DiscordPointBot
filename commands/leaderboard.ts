@@ -242,7 +242,7 @@ LeastDebt       Unluckiest
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = await Promise.all(result.map(async (user, index): Promise<any> => {
             const member = await guild.members.fetch(user.id).catch(() => undefined)
-            const name = !!member ? deleteMarkdown(member.displayName) : "Deleted User"
+            const name = member ? deleteMarkdown(member.displayName) : "Deleted User"
             maxLen = maxLen < name.length ? name.length : maxLen
             return {
                 nameLen: name.length,

@@ -5,7 +5,7 @@
   "main": "index.ts",
   "scripts": {
     "start": "ts-node index.ts",
-    "test": "ts-node test/userUtil.test.ts",
+    "test": "ts-node test/userUtil.test.ts && ts-node test/commands.test.ts",
     "lint": "eslint . --ext .ts"
   },
   "config": {
