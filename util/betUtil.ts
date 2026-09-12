@@ -1,5 +1,5 @@
+/*
 import { Guild } from "discord.js"
-import { userMutexes } from ".."
 import betModel, { deleteBet, getBet, IUserBet } from "../db/bet"
 import { addPoints } from "./userUtil"
 
@@ -8,13 +8,7 @@ const maxOdds = 4
 export const returnPointsDeleteBet = async (betThreadId: string) => {
     const bet = await getBet(betThreadId)
     for(const user of bet.userBets){
-        const userMutex = userMutexes.get(user.userId)
-        if(!userMutex) {
-            return
-        }
-        await userMutex.runExclusive(async() => {
-            await addPoints(user.userId, user.bet)
-        }).catch(() => {})
+        await addPoints(user.userId, user.bet)
     }
     await deleteBet(betThreadId)
 }
@@ -146,3 +140,4 @@ export const checkAndCancelMaroonedBets = async (guild: Guild) => {
         });
     }
 }
+*/

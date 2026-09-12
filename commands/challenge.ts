@@ -1,16 +1,16 @@
 import { Mutex, withTimeout } from "async-mutex";
-import { userMutexes } from "..";
 import { deleteChallenge, getChallenge, insertChallenge, updateChallenge } from "../db/challenge";
-import isValidNumberArg from "../util/isValidNumberArg";
 import isValidUserArg from "../util/isValidUserArg";
-import getUser, { addPoints, incUser } from "../util/userUtil";
-import { ICallback, ICommand } from "../wokTypes";
+import { parseTarget, parsePoints } from "../util/args";
+import { inc, updateUser } from "../util/userUtil";
 import getRandomValues from 'get-random-values'
 import { Guild, Message } from "discord.js";
 import { cancelChallenge } from "../util/challengeUtil";
 import { assignDustedRole } from "../events/assignMostPointsRole";
+import textCommand from "../util/textCommand";
+import withUserLock from "../util/userLock";
 
-const challenge: ICommand = {
+const challenge = textCommand({
     name: 'challenge',
     category: 'point challenge',
     description: 'flip against a person',
@@ -19,70 +19,42 @@ const challenge: ICommand = {
     maxArgs: 2,
     cooldown: '3s',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
-    callback: async (options: ICallback) => {
-        const { message, args, guild } = options
-
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
+}, async (ctx) => {
+        const { message, args, guild } = ctx
 
         let targetId = ''
         let filter = (i): boolean => {
             return true
         }
         if (args[1]) {
-            targetId = args[1].replace(/\D/g,'')
-            if (targetId === message.author.id) {
-                message.reply({content: `Nope ${process.env.NOPPERS_EMOJI}`})
+            const parsed = await parseTarget(args[1], ctx)
+            if (parsed === undefined) {
                 return
             }
-
-            if (!(await isValidUserArg(targetId, guild))) {
-                message.reply({content: `Dont know user ${args[1]} ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
+            targetId = parsed
 
             filter = (i): boolean => {
-                return i.user.id === targetId || i.user.id === message.author.id
+                return i.user.id === targetId || i.user.id === ctx.authorId
             }
         }
 
-        if (await getChallenge(message.author.id)) {
-            message.reply({content: `Only one challenge at a time${process.env.NOPPERS_EMOJI}`})
+        if (await getChallenge(ctx.authorId)) {
+            await message.reply({content: `Only one challenge at a time${process.env.NOPPERS_EMOJI}`})
             return
         }
 
-        const userMutex = userMutexes.get(message.author.id)
-        if(!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
-
-        const challengePoints = await userMutex.runExclusive(async(): Promise<number> => {
-            const user = await getUser(message.author.id)
-            
-            const cPoints = args[0].toUpperCase() === 'ALL' ? user.points : Number(args[0])
-
-            if (!isValidNumberArg(cPoints)) {
-                message.reply({content: `${cPoints === 0 ? 0 : args[1]} ain valid ${process.env.NOPPERS_EMOJI}`})
-                return -1
-            }
-
-            if (cPoints > user.points) {
-                message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                return -1
+        const challengePoints = await withUserLock(ctx.authorId, message, async (user) => {
+            const cPoints = await parsePoints(args[0], user, message, 'challenge')
+            if (cPoints === undefined) {
+                return undefined
             }
 
             await insertChallenge({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
-            await addPoints(user.id, -cPoints)
+            await updateUser(user.id, {points: inc(-cPoints)})
             return cPoints
-        }).catch(async (err):Promise<number> => { 
-            console.log(err) 
-            return -1
         })
 
-        if (challengePoints < 0) {
+        if (challengePoints === undefined) {
             return
         }
 
@@ -130,42 +102,35 @@ const challenge: ICommand = {
                         return
                     }
 
-                    const targetMutex = userMutexes.get(i.user.id)
-                    if(!targetMutex) {
-                        i.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-                        return
-                    }
-                    let targetUser
-                    let acceptBet
-                    await targetMutex.runExclusive(async() => {
-                        targetUser = await getUser(i.user.id)
+                    const accepted = await withUserLock(i.user.id, i, async (targetUser) => {
                         if (targetUser.points < 1) {
                             await i.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
-                            return
+                            return undefined
                         }
-                        
+
                         if(targetId === '' && targetUser.points < challengePoints){
                             await i.reply({content: `You only got ${targetUser.points} ${process.env.NOPPERS_EMOJI}`})
-                            return
+                            return undefined
                         }
-                        
-                        acceptBet = targetId === '' || targetUser.points >= challengePoints ? 
-                                challengePoints : 
+
+                        const acceptBet = targetId === '' || targetUser.points >= challengePoints ?
+                                challengePoints :
                                 targetUser.points
 
-
                         if(acceptBet < challengePoints){
-                            await incUser(message.author.id, {points: challengePoints - acceptBet})
-                            await updateChallenge(message.author.id, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet })
+                            await updateUser(ctx.authorId, {points: inc(challengePoints - acceptBet)})
+                            await updateChallenge(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
                         } else {
-                            await updateChallenge(message.author.id, {acceptId: targetUser.id, acceptBet })
+                            await updateChallenge(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
                         }
-                        await incUser(targetUser.id, {points: -acceptBet})
-                    }).catch((err) => console.log(err))
+                        await updateUser(targetUser.id, {points: inc(-acceptBet)})
+                        return {targetUser: targetUser, acceptBet: acceptBet}
+                    })
 
-                    if (!acceptBet) {
+                    if (!accepted) {
                         return
                     }
+                    const { targetUser, acceptBet } = accepted
                     canceled = false
                     challengeCollector.stop()
 
@@ -192,15 +157,14 @@ const challenge: ICommand = {
 
         challengeCollector.on('end', async () => {
             if (canceled || cancelButtonHit) {
-                const challenge = await getChallenge(message.author.id)
+                const challenge = await getChallenge(ctx.authorId)
                 if (challenge) {
-                    await cancelChallenge(message.author.id, challenge)
+                    await cancelChallenge(ctx.authorId, challenge)
                     challengeMessage.edit({content: `Challenge canceled ${process.env.NOPPERS_EMOJI}`, components: []})
                 }
             }
         })
-    }
-}
+})
 
 export default challenge
 
@@ -212,8 +176,8 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.channel.send({
             content: `<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await incUser(ownerId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
-        const user = await incUser(targetId, {challengePointsLost: acceptBet, challengesLost: 1})
+        await updateUser(ownerId, {points: inc(acceptBet*2), challengePointsWon: inc(acceptBet), challengesWon: inc(1)})
+        const user = await updateUser(targetId, {challengePointsLost: inc(acceptBet), challengesLost: inc(1)})
         await deleteChallenge(ownerId)
         if (acceptBet >= 100 && user.points < 5) {
             await assignDustedRole(guild, user.id)
@@ -222,8 +186,8 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.channel.send({
             content: `<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await incUser(targetId, {points: acceptBet*2, challengePointsWon: acceptBet, challengesWon: 1})
-        const user = await incUser(ownerId, {challengePointsLost: acceptBet, challengesLost: 1})
+        await updateUser(targetId, {points: inc(acceptBet*2), challengePointsWon: inc(acceptBet), challengesWon: inc(1)})
+        const user = await updateUser(ownerId, {challengePointsLost: inc(acceptBet), challengesLost: inc(1)})
         await deleteChallenge(ownerId)
         if (acceptBet >= 100 && user.points < 5) {
             await assignDustedRole(guild, user.id)

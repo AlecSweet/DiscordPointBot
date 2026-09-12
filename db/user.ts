@@ -1,4 +1,4 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, models, Model } from "mongoose";
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -11,12 +11,13 @@ export interface IUser {
     pointsWon: number
     pointsLost: number
     secondsActive: number
-    cooldown: Date
     flipStreak: number
     maxWinStreak: number
     maxLossStreak: number
     dailyClaim: Date
     weeklyClaim: Date
+    monthlyClaim: Date
+    yearlyClaim: Date
     pointsGiven: number
     pointsRecieved: number
     pointsClaimed: number
@@ -39,46 +40,34 @@ export interface IUser {
     rpsLost: number
 }
 
-export interface IUserUpdates {
-    points?: number
-    activeStartDate?: Date | null
-    flipsLost?: number
-    flipsWon?: number
-    pointsWon?: number
-    pointsLost?: number
-    secondsActive?: number
-    cooldown?: Date
-    flipStreak?: number
-    maxWinStreak?: number
-    maxLossStreak?: number
-    dailyClaim?: Date
-    weeklyClaim?: Date
-    pointsGiven?: number
-    pointsRecieved?: number
-    pointsClaimed?: number
-    betPointsWon?: number
-    betPointsLost?: number
-    betsWon?: number
-    betsLost?: number
-    betsOpened?:  number
-    challengePointsWon?: number
-    challengePointsLost?: number
-    challengesWon?: number
-    challengesLost?: number
-    warPointsWon?: number
-    warPointsLost?: number
-    warsWon?: number
-    warsLost?: number
-    rpsPointsWon?: number
-    rpsPointsLost?: number
-    rpsWon?: number
-    rpsLost?: number
+type NumericField = {[K in keyof IUser]: IUser[K] extends number ? K : never}[keyof IUser]
+
+type PipelineOwnedField = "activeStartDate"
+type IncrementOnlyField = "points" | "secondsActive"
+
+export interface IncOp {
+    op: "inc"
+    by: number
 }
+
+export interface SetOp<V> {
+    op: "set"
+    to: V
+}
+
+export type Op<K extends keyof IUser> =
+    K extends "id" | PipelineOwnedField ? never
+  : K extends IncrementOnlyField ? IncOp
+  : K extends NumericField ? IncOp | SetOp<number>
+  : SetOp<IUser[K]>
+
+export type IUserUpdate = {[K in keyof IUser]?: Op<K>}
 
 const userSchema = new Schema({
     id: {
         type: String,
         required: true,
+        unique: true,
     },
     points: {
         type: Number,
@@ -108,10 +97,6 @@ const userSchema = new Schema({
         type: Number,
         default: 0
     },
-    cooldown: {
-        type: Date,
-        default: new Date()
-    },
     flipStreak: {
         type: Number,
         default: 0
@@ -129,6 +114,14 @@ const userSchema = new Schema({
         default: null
     },
     weeklyClaim: {
+        type: Date,
+        default: null
+    },
+    monthlyClaim: {
+        type: Date,
+        default: null
+    },
+    yearlyClaim: {
         type: Date,
         default: null
     },
@@ -214,7 +207,7 @@ const userSchema = new Schema({
     },
 })
 
-const userModel = model['user'] || model('user', userSchema);
+const userModel: Model<IUser> = models.user || model<IUser>('user', userSchema);
 
 export default userModel;
 

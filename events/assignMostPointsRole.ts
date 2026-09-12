@@ -1,8 +1,7 @@
 import { Guild } from "discord.js"
 import userModel from "../db/user"
+import { settledPoints } from "../util/userUtil"
 import * as dotenv from "dotenv"
-import { userMutexes } from ".."
-import getUser from "../util/userUtil"
 dotenv.config()
 
 const assignMostPointsRole = async (guild: Guild) => {
@@ -10,38 +9,22 @@ const assignMostPointsRole = async (guild: Guild) => {
     const wealthiestRole = guild.roles.cache.get(roleId);
 
     const top = await userModel.aggregate([
-        {$sort:{points:-1}},
-        {$limit: 5}
+        {$set: {settledPoints: settledPoints}},
+        {$sort: {settledPoints: -1}},
+        {$limit: 1}
     ])
 
-    if (top) {
-        let topUserId
-        let topUserPoints = 0 
-        for(const user of top) {
-            const userMutex = userMutexes.get(user.id)
-            if (!userMutex) { return }
-            let tempUser
-            await userMutex.runExclusive(async() => {
-                tempUser = await getUser(user.id)
-            }).catch((err) => console.log(err))
-            if (tempUser) {
-                if (tempUser.points > topUserPoints) {
-                    topUserId = tempUser.id
-                    topUserPoints = tempUser.points
-                }
-            }
-        }
+    const topUserId = top.length ? top[0].id : ''
 
-        if (wealthiestRole && topUserId) {
-            wealthiestRole.members.forEach(async member => {
-                if (member.id !== topUserId) {
-                    await member.roles.remove(wealthiestRole)
-                }
-            })
-            const topMember = guild.members.cache.get(topUserId)
-            if (topMember && !topMember.roles.cache.has(roleId)) {
-                await topMember.roles.add(wealthiestRole)
+    if (wealthiestRole && topUserId) {
+        wealthiestRole.members.forEach(async member => {
+            if (member.id !== topUserId) {
+                await member.roles.remove(wealthiestRole)
             }
+        })
+        const topMember = guild.members.cache.get(topUserId)
+        if (topMember && !topMember.roles.cache.has(roleId)) {
+            await topMember.roles.add(wealthiestRole)
         }
     }
 }

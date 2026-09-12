@@ -1,7 +1,7 @@
 import userModel from "../db/user";
 import isValidNumberArg from "../util/isValidNumberArg";
 import { deleteMarkdown } from "../util/isValidUserArg";
-import { ICallback, ICommand } from "../wokTypes";
+import textCommand from "../util/textCommand";
 
 enum LeaderboardTypes {
     points = 'points',
@@ -24,13 +24,6 @@ enum LeaderboardTypes {
     lossstreak = 'maxLossStreak',
     highroller = 'highRoller',
     pointsclaimed = 'pointsClaimed',
-    betpointswon = 'betPointsWon',
-    betpointslost = 'betPointsLost',
-    pointsbet = 'pointsBet',
-    betswon = 'betsWon',
-    betslost = 'betsLost',
-    bets = 'bets',
-    betsopened = 'betsOpened',
     warpointswon= 'warPointsWon', 
     warpointslost= 'warPointsLost', 
     pointswarred= 'pointsWarred', 
@@ -72,13 +65,6 @@ enum LeaderboardTitles {
     maxLossStreak = 'Max Loss Streak Top',
     highRoller = 'Flip Average Bet',
     pointsClaimed = 'Points Claimed Top',
-    betPointsWon = 'Points Won On Bets Top',
-    betPointsLost = 'Points Lost On Bets Top',
-    pointsBet = 'Total Points Bet Top',
-    betsWon = 'Bets Won Top',
-    betsLost = 'Bets Lost Top',
-    bets = 'Total Bets Played In Top',
-    betsOpened = 'Bets Opened Top',
     challengePointsWon = 'Points Won On Challenges Top',
     challengePointsLost = 'Points Lost On Challenges Top',
     pointsChallenged = 'Total Points Bet on Challenges Top',
@@ -166,19 +152,6 @@ const leaderboardAggregates = {
         {$sort: {avgPPB:-1}},
     ],
     pointsClaimed: [{$match: { pointsClaimed: {$gt: 0}}}, {$sort:{pointsClaimed:-1}}],
-    betPointsWon: [{$sort:{betPointsWon:-1}}],
-    betPointsLost: [{$sort:{betPointsLost:-1}}],
-    pointsBet: [
-        {$addFields: { pointsBet: { $add: [ "$betPointsWon", "$betPointsLost"]}}},
-        {$sort: {pointsBet:-1}},
-    ],
-    betsWon: [{$sort:{betsWon:-1}}],
-    betsLost: [{$sort:{betsLost:-1}}],
-    bets: [
-        {$addFields: { bets: { $add: [ "$betsWon", "$betsLost"]}}},
-        {$sort: {bets:-1}},
-    ],
-    betsOpened: [{$match: { betsOpened: {$gt: 0}}}, {$sort:{betsOpened:-1}}],
     warPointsWon: [{$sort:{warPointsWon:-1}}],
     warPointsLost: [{$sort:{warPointsLost:-1}}],
     pointsWarred: [
@@ -206,8 +179,8 @@ const leaderboardAggregates = {
     rpsPointsWon: [{$sort:{rpsPointsWon:-1}}],
     rpsPointsLost: [{$sort:{rpsPointsLost:-1}}],
     pointsRps: [
-        {$addFields: { pointsChallenged: { $add: [ "$rpsPointsWon", "$rpsPointsLost"]}}},
-        {$sort: {pointsChallenged:-1}},
+        {$addFields: { pointsRps: { $add: [ "$rpsPointsWon", "$rpsPointsLost"]}}},
+        {$sort: {pointsRps:-1}},
     ],
     rpsWon: [{$sort:{rpsWon:-1}}],
     rpsLost: [{$sort:{rpsLost:-1}}],
@@ -217,7 +190,7 @@ const leaderboardAggregates = {
     ],
 }
 
-const leaderboard: ICommand = {
+const leaderboard = textCommand({
     name: 'top',
     category: 'leaderboard',
     description: 'top users',
@@ -226,21 +199,12 @@ const leaderboard: ICommand = {
     maxArgs: 2,
     cooldown: '6s',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
-    callback: async (options: ICallback) => {
-        const { message, args, guild} = options
-
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
+}, async (ctx) => {
+        const { message, args, guild } = ctx
 
         let leaderboardType = args[0] ? args[0].toLowerCase() : args[0]
         if (!leaderboardType || !LeaderboardTypes[leaderboardType]) {
-            const validTypes: string[] = []
-            for (const e in LeaderboardTypes) {
-                validTypes.push(e)
-            }
-            message.reply({content: 
+            await message.reply({content:
 `Use !top <leaderboard type> <optional # of users[1-25]>
 \`\`\`
 Leadboard Types:
@@ -251,14 +215,13 @@ Given           FlipsLost        ChallengesLost         RpsLost
 Received        FlipPointsWon    ChallengePointsWon     RpsPointsWon
 PointsClaimed   FlipPointsLost   ChallengePointsLost    RpsPointsLost
 MostDebt        PointsFlipped    PointsChallenged       PointsRps
-Least Debt      Unluckiest
-                Luckiest         Wars                   Bets 
-                WorstFlipper     WarsWon                BetsWon 
-                BestFlipper      WarsLost               BetsLost 
-                WinStreak        WarPointsWon           BetPointsWon
-                LossStreak       WarPointsLost          BetPointsLost
-                Highroller       PointsWarred           BetsOpened
-                                                        PointsBet
+LeastDebt       Unluckiest
+                Luckiest         Wars
+                WorstFlipper     WarsWon
+                BestFlipper      WarsLost
+                WinStreak        WarPointsWon
+                LossStreak       WarPointsLost
+                Highroller       PointsWarred
 \`\`\``})
             return
         }
@@ -266,7 +229,7 @@ Least Debt      Unluckiest
 
         const numTop = args[1] ? Number(args[1]) : 5
         if (!isValidNumberArg(numTop) || numTop > 25) {
-            message.reply({content: `${args[1]} ain valid for number of top users ${process.env.NOPPERS_EMOJI}, enter a number 1-25`})
+            await message.reply({content: `${args[1]} ain valid for number of top users ${process.env.NOPPERS_EMOJI}, enter a number 1-25`})
             return
         }
 
@@ -279,7 +242,7 @@ Least Debt      Unluckiest
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = await Promise.all(result.map(async (user, index): Promise<any> => {
             const member = await guild.members.fetch(user.id).catch(() => undefined)
-            const name = !!member ? deleteMarkdown(member.displayName) : "Deleted User"
+            const name = member ? deleteMarkdown(member.displayName) : "Deleted User"
             maxLen = maxLen < name.length ? name.length : maxLen
             return {
                 nameLen: name.length,
@@ -295,12 +258,11 @@ Least Debt      Unluckiest
             return `${entry.half1}${space}${entry.half2}`
         })
 
-        message.reply({
+        await message.reply({
             content: `**${LeaderboardTitles[leaderboardType]} ${numTop}**\n\`\`\`
 ${formatedResults.join('')}\`\`\`${leaderboardType === 'points' || leaderboardType === 'secondsActive' ? `${process.env.SHRUGGERS_EMOJI}*ᴹᶦᵍʰᵗ ᵇᵉ ᵃ ᵇᶦᵗ ᵇᵉʰᶦⁿᵈ`: ''}`
         })
-    }
-}
+})
 
 export default leaderboard
 

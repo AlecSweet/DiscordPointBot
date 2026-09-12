@@ -1,15 +1,14 @@
 import { Mutex, withTimeout } from "async-mutex";
-import { userMutexes } from "..";
 import { deleteRps, getRps, insertRps, updateRps } from "../db/rps";
-import isValidNumberArg from "../util/isValidNumberArg";
-import isValidUserArg from "../util/isValidUserArg";
-import getUser, { addPoints, incUser } from "../util/userUtil";
-import { ICallback, ICommand } from "../wokTypes";
+import { parseTarget, parsePoints } from "../util/args";
+import { inc, updateUser } from "../util/userUtil";
 import { Guild, Message } from "discord.js";
 import { cancelRps } from "../util/rpsUtil";
 import { assignDustedRole } from "../events/assignMostPointsRole";
+import textCommand from "../util/textCommand";
+import withUserLock from "../util/userLock";
 
-const rps: ICommand = {
+const rps = textCommand({
     name: 'rps',
     category: 'point rps',
     description: 'rps',
@@ -18,70 +17,42 @@ const rps: ICommand = {
     maxArgs: 2,
     cooldown: '5s',
     syntaxError: 'Incorrect syntax! Use `{PREFIX}`ping {ARGUMENTS}',
-    callback: async (options: ICallback) => {
-        const { message, args, guild } = options
-
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
+}, async (ctx) => {
+        const { message, args, guild } = ctx
 
         let targetId = ''
         let filter = (i): boolean => {
             return true
         }
         if (args[1]) {
-            targetId = args[1].replace(/\D/g,'')
-            if (targetId === message.author.id) {
-                message.reply({content: `Nope ${process.env.NOPPERS_EMOJI}`})
+            const parsed = await parseTarget(args[1], ctx)
+            if (parsed === undefined) {
                 return
             }
-
-            if (!(await isValidUserArg(targetId, guild))) {
-                message.reply({content: `Dont know user ${args[1]} ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
+            targetId = parsed
 
             filter = (i): boolean => {
-                return i.user.id === targetId || i.user.id === message.author.id
+                return i.user.id === targetId || i.user.id === ctx.authorId
             }
         }
 
-        if (await getRps(message.author.id)) {
-            message.reply({content: `Only one at a time${process.env.NOPPERS_EMOJI}`})
+        if (await getRps(ctx.authorId)) {
+            await message.reply({content: `Only one at a time${process.env.NOPPERS_EMOJI}`})
             return
         }
 
-        const userMutex = userMutexes.get(message.author.id)
-        if(!userMutex) {
-            message.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
-
-        const rpsPoints = await userMutex.runExclusive(async(): Promise<number> => {
-            const user = await getUser(message.author.id)
-            
-            const cPoints = args[0].toUpperCase() === 'ALL' ? user.points : Number(args[0])
-
-            if (!isValidNumberArg(cPoints)) {
-                message.reply({content: `${cPoints === 0 ? 0 : args[1]} ain valid ${process.env.NOPPERS_EMOJI}`})
-                return -1
-            }
-
-            if (cPoints > user.points) {
-                message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                return -1
+        const rpsPoints = await withUserLock(ctx.authorId, message, async (user) => {
+            const cPoints = await parsePoints(args[0], user, message, 'bet')
+            if (cPoints === undefined) {
+                return undefined
             }
 
             await insertRps({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
-            await addPoints(user.id, -cPoints)
+            await updateUser(user.id, {points: inc(-cPoints)})
             return cPoints
-        }).catch(async (err):Promise<number> => { 
-            console.log(err) 
-            return -1
         })
 
-        if (rpsPoints < 0) {
+        if (rpsPoints === undefined) {
             return
         }
 
@@ -148,42 +119,35 @@ const rps: ICommand = {
                         }
                     } else if (i.user.id !== message.author.id && !acceptPick) {
 
-                        const targetMutex = userMutexes.get(i.user.id)
-                        if(!targetMutex) {
-                            i.reply({content: `Got an Error ${process.env.NOPPERS_EMOJI}`})
-                            return
-                        }
-                        let targetUser
-                        let acceptBet
-                        await targetMutex.runExclusive(async() => {
-                            targetUser = await getUser(i.user.id)
+                        const accepted = await withUserLock(i.user.id, i, async (targetUser) => {
                             if (targetUser.points < 1) {
                                 await i.reply({content: `You've got no points ${process.env.NOPPERS_EMOJI}`})
-                                return
+                                return undefined
                             }
-                            
+
                             if(targetId === '' && targetUser.points < rpsPoints){
                                 await i.reply({content: `You only got ${targetUser.points} ${process.env.NOPPERS_EMOJI}`})
-                                return
+                                return undefined
                             }
-                            
-                            acceptBet = targetId === '' || targetUser.points >= rpsPoints ? 
-                                    rpsPoints : 
+
+                            const acceptBet = targetId === '' || targetUser.points >= rpsPoints ?
+                                    rpsPoints :
                                     targetUser.points
 
-
                             if(acceptBet < rpsPoints){
-                                await incUser(message.author.id, {points: rpsPoints - acceptBet})
-                                await updateRps(message.author.id, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet })
+                                await updateUser(ctx.authorId, {points: inc(rpsPoints - acceptBet)})
+                                await updateRps(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
                             } else {
-                                await updateRps(message.author.id, {acceptId: targetUser.id, acceptBet })
+                                await updateRps(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
                             }
-                            await incUser(targetUser.id, {points: -acceptBet})
-                        }).catch((err) => console.log(err))
+                            await updateUser(targetUser.id, {points: inc(-acceptBet)})
+                            return {targetUser: targetUser, acceptBet: acceptBet}
+                        })
 
-                        if (!acceptBet) {
+                        if (!accepted) {
                             return
                         }
+                        const { targetUser, acceptBet } = accepted
 
                         gameStarting = `<@${message.author.id}> against <@${targetUser.id}> for ${acceptBet} points ${process.env.PEPO_SMASH_EMOJI}\n⠀\n`
                         switch(i.customId) {
@@ -213,23 +177,22 @@ const rps: ICommand = {
 
         rpsCollector.on('end', async () => {
             if (canceled || cancelButtonHit) {
-                const rps = await getRps(message.author.id)
+                const rps = await getRps(ctx.authorId)
                 if (rps) {
-                    await cancelRps(message.author.id, rps)
+                    await cancelRps(ctx.authorId, rps)
                     rpsMessage.edit({content: `Game canceled ${process.env.NOPPERS_EMOJI}`, components: []})
                 }
             } else {
-                const rps = await getRps(message.author.id)
+                const rps = await getRps(ctx.authorId)
                 await rpsMessage.edit( { content: `${gameStarting}Rock` })
-                setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper` } )}, 1000), 
+                setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper` } )}, 1000),
                 setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper, Scissors` })}, 2000),
                 setTimeout(() => {
-                    finishBet(rps.acceptBet, rpsMessage, rps.acceptId, message.author.id, guild, ownerPick, acceptPick, gameStarting)
+                    finishBet(rps.acceptBet, rpsMessage, rps.acceptId, ctx.authorId, guild, ownerPick, acceptPick, gameStarting)
                 }, 3000)
             }
         })
-    }
-}
+})
 
 export default rps
 
@@ -267,8 +230,8 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.edit({
             content: `${gameStarting}${outcomeString}<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await incUser(ownerId, {points: acceptBet*2, rpsPointsWon: acceptBet, rpsWon: 1})
-        const user = await incUser(targetId, {rpsPointsLost: acceptBet, rpsLost: 1})
+        await updateUser(ownerId, {points: inc(acceptBet*2), rpsPointsWon: inc(acceptBet), rpsWon: inc(1)})
+        const user = await updateUser(targetId, {rpsPointsLost: inc(acceptBet), rpsLost: inc(1)})
         await deleteRps(ownerId)
         if (acceptBet >= 100 && user.points < 5) {
             await assignDustedRole(guild, user.id)
@@ -277,8 +240,8 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.edit({
             content: `${gameStarting}${outcomeString}<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await incUser(targetId, {points: acceptBet*2, rpsPointsWon: acceptBet, rpsWon: 1})
-        const user = await incUser(ownerId, {rpsPointsLost: acceptBet, rpsLost: 1})
+        await updateUser(targetId, {points: inc(acceptBet*2), rpsPointsWon: inc(acceptBet), rpsWon: inc(1)})
+        const user = await updateUser(ownerId, {rpsPointsLost: inc(acceptBet), rpsLost: inc(1)})
         await deleteRps(ownerId)
         if (acceptBet >= 100 && user.points < 5) {
             await assignDustedRole(guild, user.id)

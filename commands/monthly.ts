@@ -1,16 +1,16 @@
-import { claimDaily } from "../util/claimUtil";
+import { claimMonthly } from "../util/claimUtil";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
 
-const daily = textCommand({
-    name: 'daily',
-    category: 'claim daily',
+const monthly = textCommand({
+    name: 'monthly',
+    category: 'claim monthly',
     description: 'claim points',
     cooldown: '3s',
 }, async (ctx) => {
     await withUserLock(ctx.authorId, ctx.message, async (user) => {
-        await claimDaily(user, ctx.message)
+        await claimMonthly(user, ctx.message)
     })
 })
 
-export default daily
+export default monthly
