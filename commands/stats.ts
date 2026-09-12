@@ -1,10 +1,8 @@
-import { userMutexes } from "..";
-import isValidUserArg from "../util/isValidUserArg";
-import { settleUser } from "../util/userUtil";
-import { ICallback, ICommand } from "../wokTypes";
-import noMutexErrorMessage from "../util/noMutexErrorMessage";
+import { parseTarget } from "../util/args";
+import textCommand from "../util/textCommand";
+import withUserLock from "../util/userLock";
 
-const points: ICommand = {
+const stats = textCommand({
     name: 'stats',
     category: 'statCheck',
     description: 'Check stats',
@@ -12,53 +10,36 @@ const points: ICommand = {
     minArgs: 0,
     maxArgs: 1,
     cooldown: '5s',
-    callback: async (options: ICallback) => {
-        const { message, args, guild } = options
+}, async (ctx) => {
+    const id = ctx.args[0] ? await parseTarget(ctx.args[0], ctx, {allowSelf: true}) : ctx.authorId
+    if (id === undefined) {
+        return
+    }
 
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
+    await withUserLock(id, ctx.message, async (user) => {
+        const days = Math.floor(user.secondsActive / 86400)
+        const secLeftAfterDays = user.secondsActive % 86400
+        const hours = Math.floor(secLeftAfterDays / 3600)
+        const secLeftAfterHours = secLeftAfterDays % 3600
+        const minutes = Math.floor(secLeftAfterHours / 60)
 
-        let id = message.author.id
-        if (args[0]) {
-            id = args[0].replace(/\D/g,'')
-            if (!(await isValidUserArg(id, guild))) {
-                message.reply({content: `Dont know user ${args[0]} ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-        }
+        const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
+        const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
+        const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
 
-        const userMutex = userMutexes.get(id)
-        if (!userMutex) {
-            message.reply({content: noMutexErrorMessage})
-            return
-        }
-        userMutex.runExclusive(async() => {
-            const user = await settleUser(id)
-            const days = Math.floor(user.secondsActive / 86400)
-            const secLeftAfterDays = user.secondsActive % 86400
-            const hours = Math.floor(secLeftAfterDays / 3600)
-            const secLeftAfterHours = secLeftAfterDays % 3600
-            const minutes = Math.floor(secLeftAfterHours / 60)
+        const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
+        const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
+        const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
 
-            const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
-            const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
-            const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
+        const wpPF = (user.warsWon + user.warsLost) > 0 ? (Math.round(((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost)) * 10) / 10).toFixed(1) : 0
+        const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
+        const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
 
-            const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
-            const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
-            const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
+        const rpPF = (user.rpsWon + user.rpsLost) > 0 ? (Math.round(((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost)) * 10) / 10).toFixed(1) : 0
+        const rpPL = user.rpsLost > 0 ? (Math.round((user.rpsPointsLost / user.rpsLost) * 10) / 10).toFixed(1) : 0
+        const rpPW = user.rpsWon > 0 ? (Math.round((user.rpsPointsWon / user.rpsWon) * 10) / 10).toFixed(1) : 0
 
-            const wpPF = (user.warsWon + user.warsLost) > 0 ? (Math.round(((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost)) * 10) / 10).toFixed(1) : 0
-            const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
-            const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
-
-            const rpPF = (user.rpsWon + user.rpsLost) > 0 ? (Math.round(((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost)) * 10) / 10).toFixed(1) : 0
-            const rpPL = user.rpsLost > 0 ? (Math.round((user.rpsPointsLost / user.rpsLost) * 10) / 10).toFixed(1) : 0
-            const rpPW = user.rpsWon > 0 ? (Math.round((user.rpsPointsWon / user.rpsWon) * 10) / 10).toFixed(1) : 0
-
-            message.reply({content: 
+        await ctx.message.reply({content:
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
 Points          ${user.points.toLocaleString('en-US')}
@@ -87,9 +68,8 @@ R P S           ${(user.rpsWon+user.rpsLost).toLocaleString('en-US')} Total / ${
 Returns         ${(user.rpsPointsWon+user.rpsPointsLost).toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Won / ${user.rpsPointsLost.toLocaleString('en-US')} Lost
 Avg Bets        ${rpPF.toLocaleString('en-US')} Avg Bet / ${rpPW.toLocaleString('en-US')} Avg Win / ${rpPL.toLocaleString('en-US')} Avg Loss
 \`\`\``
-            })
-        }).catch(() => {})
-    }
-}
+        })
+    })
+})
 
-export default points
+export default stats

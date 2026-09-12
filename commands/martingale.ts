@@ -1,96 +1,85 @@
-import { settleUser } from "../util/userUtil";
-import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
-import { userMutexes } from "..";
-import { Guild } from "discord.js";
+import { Guild, Message } from "discord.js";
 import { IUser } from "../db/user";
 import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/flipUtil";
-import isValidNumberArg from "../util/isValidNumberArg";
+import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
+import formatNet from "../util/formatNet";
 import sleep from "../util/sleep";
-import noMutexErrorMessage from "../util/noMutexErrorMessage";
+import textCommand from "../util/textCommand";
+import withUserLock from "../util/userLock";
 dotenv.config()
 
-const MAX_WINS = 100
+const MAX_WINS = 50
+const MIN_BET_PCT = 0.01
 const MAX_LINES = 10
 const ROUND_MS = 2000
 
-const martingale: ICommand = {
+const martingale = textCommand({
     name: 'martin',
     aliases: ['shkreli', 'm', 'tarmin', 'martingale'],
     category: 'gambling',
     description: 'martingale shit',
-    expectedArgs: '<# of points to start on> <# of times to win>',
+    expectedArgs: '<# of points to start on (min 1% of your points), "all" or "some"> <# of times to win or "some">',
     minArgs: 2,
     maxArgs: 2,
     cooldown: '3s',
-    callback: async (options: ICallback) => {
-        const { message, args, guild } = options
-
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+}, async (ctx) => {
+    await withUserLock(ctx.authorId, ctx.message, async (user) => {
+        const minBet = Math.max(1, Math.ceil(user.points * MIN_BET_PCT))
+        const baseBet = await parsePoints(ctx.args[0], user, ctx.message, 'bet', minBet)
+        if (baseBet === undefined) {
             return
         }
 
-        const userMutex = userMutexes.get(message.author.id)
-        if(!userMutex) {
-            message.reply({content: noMutexErrorMessage})
+        const wins = await parseCount(ctx.args[1], MAX_WINS, ctx.message, 'number of wins')
+        if (wins === undefined) {
             return
         }
 
-        await userMutex.runExclusive(async() => {
-            const user = await settleUser(message.author.id)
-
-            const baseBet = Number(args[0])
-            if (!isValidNumberArg(baseBet)) {
-                message.reply({content: `${args[0]} ain a valid bet ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-
-            if (baseBet > user.points) {
-                message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-
-            const wins = Number(args[1])
-            if (!isValidNumberArg(wins)) {
-                message.reply({content: `${args[1]} ain a valid number of wins ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-
-            if (wins > MAX_WINS) {
-                message.reply({content: `No dog, ${MAX_WINS} at a time ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-
-            await runMartingale(guild, user, baseBet, wins, message)
-        }).catch((err) => console.log(err))
-    }
-}
+        await runMartingale(ctx.guild, user, baseBet, wins, ctx.message)
+    })
+})
 
 export default martingale
 
-const getMessageContent = (user: IUser, bet: number, winsLeft: number, addon = ' ', final = ''): any => { 
+const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = ''): any => {
+    const losses = rounds.reduce((flips, round) => flips + round.length, 0) - wins
+
     const build = (body: string) =>
 `**<@${user.id}>'s Martinelli**
-\`\`\`Ruby
-Points: ${user.points}     Next Bet: ${bet}     Wins Left: ${winsLeft}
+\`\`\`ansi
+Points: ${user.points}     Net: ${formatNet(net)}     Win: ${wins} of ${maxWins}
+Next Bet: ${bet}     L: ${losses}
 
 ${body}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, addon)}
+    return {content: fitToMessageLimit(build, formatRounds(rounds))}
 }
 
-const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins: number, message) => {
+const formatRounds = (rounds: string[][]): string =>
+    rounds.filter(round => round.length).slice(-MAX_LINES).map(round => round.join('  ')).join('\n')
+
+const getNetLine = (net: number): string => {
+    if (net > 0) {
+        return `up ${net} points ${process.env.PEEPO_COMFY_EMOJI}`
+    }
+    if (net < 0) {
+        return `down ${Math.abs(net)} points ${process.env.SMODGE_EMOJI}`
+    }
+    return `${process.env.SHRUGGERS_EMOJI}`
+}
+
+const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins: number, message: Message<boolean>) => {
     const startingPoints = user.points
     let bet = baseBet
     let wins = 0
     const rounds: string[][] = [[]]
 
-    const martingaleMessage = await message.channel.send(getMessageContent(user, bet, maxWins))
+    const martingaleMessage = await message.channel.send(getMessageContent(user, bet, rounds, wins, maxWins, 0))
 
     for (;;) {
         await sleep(ROUND_MS)
@@ -109,22 +98,20 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
             bet = wager * 2
         }
 
-        const record = rounds.filter(round => round.length).slice(-MAX_LINES).map(round => round.join('  ')).join('\n')
+        const net = user.points - startingPoints
 
         if (wins >= maxWins) {
-            const net = user.points - startingPoints
-            await martingaleMessage.edit(getMessageContent(user, bet, 0, record, 
-                `${maxWins} win${maxWins > 1 ? 's' : ''} banked, ${net >= 0 ? `up ${net}` : `down ${Math.abs(net)}`} points ${process.env.PEEPO_COMFY_EMOJI}`))
+            await martingaleMessage.edit(getMessageContent(user, bet, rounds, wins, maxWins, net, getNetLine(net)))
             return
         }
 
         if (bet > user.points) {
-            await martingaleMessage.edit(getMessageContent(user, bet, maxWins-wins, record, 
-                `Cant cover the next ${bet} with ${user.points} points. Sit`))
+            await martingaleMessage.edit(getMessageContent(user, bet, rounds, wins, maxWins, net,
+                `You ain't got ${bet}. Sit`))
             await checkAndAssignDusted(guild, user, wager)
             return
         }
 
-        await martingaleMessage.edit(getMessageContent(user, bet, maxWins-wins, record))
+        await martingaleMessage.edit(getMessageContent(user, bet, rounds, wins, maxWins, net))
     }
 }

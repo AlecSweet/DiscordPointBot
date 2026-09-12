@@ -5,7 +5,7 @@ import handleVoiceActivity, { checkInactivity } from "./events/handleVoiceActivi
 import * as dotenv from "dotenv"
 import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
 import { CronJob } from 'cron';
-import { Mutex, MutexInterface, withTimeout } from "async-mutex";
+import { addUserMutex } from "./util/userMutexes";
 import { checkAndCancelMaroonedChallenges } from "./util/challengeUtil";
 import { checkAndCancelMaroonedWars } from "./util/warUtil";
 import assignMostPointsRole from "./events/assignMostPointsRole";
@@ -27,8 +27,6 @@ const client = new Client({
         ] 
 })
 
-export const userMutexes = new Map<string, MutexInterface>()
-
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user?.tag}!`);
     let currentGuild
@@ -43,7 +41,7 @@ client.on('ready', async () => {
             const afkChannelId = guild.afkChannelId ? guild.afkChannelId : ''
             updateCurrentGuildInfo(activeChannelIds, afkChannelId)
             guild.members.cache.map(member => {
-                userMutexes.set(member.user.id, withTimeout(new Mutex(), 10000))
+                addUserMutex(member.user.id)
             })
         })
 
@@ -77,9 +75,7 @@ client.on('channelCreate', async (channel) => {
 })
 
 client.on('guildMemberAdd', (member) => {
-    if (!userMutexes.get(member.user.id)) {
-        userMutexes.set(member.user.id, withTimeout(new Mutex(), 10000))
-    }
+    addUserMutex(member.user.id)
 })
 
 client.login(process.env.TOKEN)

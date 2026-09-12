@@ -1,140 +1,134 @@
-import { settleUser } from "../util/userUtil";
-import { ICallback, ICommand } from "../wokTypes";
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
-import { userMutexes } from "..";
-import { Guild } from "discord.js";
+import { Guild, Message } from "discord.js";
 import { IUser } from "../db/user";
 import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/flipUtil";
-import isValidNumberArg from "../util/isValidNumberArg";
+import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
+import formatNet from "../util/formatNet";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
-import noMutexErrorMessage from "../util/noMutexErrorMessage";
+import textCommand from "../util/textCommand";
+import withUserLock from "../util/userLock";
 dotenv.config()
 
 const COUNTDOWN_MS = 3000
-const MAX_FLIPS = 25
+const MAX_FLIPS = 50
+const FLIPS_PER_ROW = 10
+const WIN = '✅'
+const LOSS = '❌'
 
-const flip: ICommand = {
+const flip = textCommand({
     name: 'flip',
     aliases: ['f','filp','fipl','lipf','pilf','fpil', 'phillip', 'fip', 'ipfl', 'iflp'],
     category: 'gambling',
     description: 'lose some points',
-    expectedArgs: '<# of points to lose> <Optional # of times to flip>',
+    expectedArgs: '<# of points to lose, "all" or "some"> <Optional # of times to flip or "some">',
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',
-    callback: async (options: ICallback) => {
-        const { message, args, guild } = options
-
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+}, async (ctx) => {
+    await withUserLock(ctx.authorId, ctx.message, async (user) => {
+        const points = await parsePoints(ctx.args[0], user, ctx.message, 'bet')
+        if (points === undefined) {
             return
         }
 
-        const userMutex = userMutexes.get(message.author.id)
-        if(!userMutex) {
-            message.reply({content: noMutexErrorMessage})
+        const flips = ctx.args[1] ? await parseCount(ctx.args[1], MAX_FLIPS, ctx.message, 'number of flips') : 1
+        if (flips === undefined) {
             return
         }
-        await userMutex.runExclusive(async() => {
-            const user = await settleUser(message.author.id)
 
-            const flipAll = args[0].toUpperCase() === 'ALL'
-            const points = flipAll ? user.points : Number(args[0])
-            if (!isValidNumberArg(points)) {
-                message.reply({content: `${points === 0 ? 0 : args[0]} ain a valid bet ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-
-            if (points > user.points) {
-                message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
-                return
-            }
-
-            let flips = 1;
-            if (args[1]) {
-                flips = Number(args[1])
-            
-                if (!isValidNumberArg(flips)) {
-                    message.reply({content: `${args[1]} ain a valid number of flips ${process.env.NOPPERS_EMOJI}`})
-                    return
-                }
-
-                if (flips > MAX_FLIPS) {
-                    message.reply({content: `No dog, ${MAX_FLIPS} at a time ${process.env.NOPPERS_EMOJI}`})
-                    return
-                }
-            }
-            if (flips > 1) {
-                await flipMultiple(guild, user, points, message, flips, flipAll)
-            } else {
-                await flipOnce(guild, user, points, message);
-            }
-        }).catch((err) => console.log(err))
-    }
-}
+        const flipAll = ctx.args[0].toUpperCase() === 'ALL'
+        if (flips > 1) {
+            await flipMultiple(ctx.guild, user, points, ctx.message, flips, flipAll)
+        } else {
+            await flipOnce(ctx.guild, user, points, ctx.message);
+        }
+    })
+})
 
 export default flip
 
-const getMessageContent = (user: IUser, flips: number, addon = ' ', final = ''): any => { 
+const getMessageContent =(user: IUser, results: string[], maxFlips: number, net: number, final = ''): any => {
+    const wins = results.filter(result => result === WIN).length
+    const losses = results.length - wins
+
     const build = (body: string) =>
 `**<@${user.id}>'s Flips**
-\`\`\`Ruby
-Points: ${user.points}     Flips Left: ${flips}
+\`\`\`ansi
+Points: ${user.points}     Net: ${formatNet(net)}     Flip: ${results.length} of ${maxFlips}
+W: ${wins}     L: ${losses}
 
 ${body}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, addon)}
+    return {content: fitToMessageLimit(build, formatRecord(results))}
 }
 
-const flipMultiple = async (guild: Guild, user: IUser, points: number, message, maxFlips: number, flipAll: boolean) => {
-    if (flipAll) {
-        let totalFlips = 0;
+const formatRecord = (results: string[]): string => {
+    const rows: string[] = []
+    for (let i = 0; i < results.length; i += FLIPS_PER_ROW) {
+        rows.push(results.slice(i, i + FLIPS_PER_ROW).join(' '))
+    }
+    return rows.join('\n')
+}
 
-        let record = ''
-        let deadline = Date.now() + COUNTDOWN_MS
-        const flipMessage = await message.channel.send(getMessageContent(user, maxFlips-totalFlips, record, `Flipping ${countdownTo(deadline)}`))
+const getNetLine = (net: number): string => {
+    if (net > 0) {
+        return `up ${net} points ${process.env.NICE_EMOJI}`
+    }
+    if (net < 0) {
+        return `down ${Math.abs(net)} points ${process.env.SMODGE_EMOJI}`
+    }
+    return `${process.env.SHRUGGERS_EMOJI}`
+}
 
-        for (;;) {
-            await sleep(Math.max(0, deadline - Date.now()))
+const flipMultiple = async (guild: Guild, user: IUser, points: number, message: Message<boolean>, maxFlips: number, flipAll: boolean) => {
+    const startingPoints = user.points
+    const results: string[] = []
 
-            const wager = points
-            const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
-            if (won) {
-                user = await updateUserWin(user, wager)
-                record += '✅ '
-            } else {
-                user = await updateUserLoss(user, wager)
-                record += '❌ '
-            }
-            points = user.points
-            totalFlips++
+    let deadline = Date.now() + COUNTDOWN_MS
+    const flipMessage = await message.channel.send(getMessageContent(user, results, maxFlips, 0, `Flipping ${countdownTo(deadline)}`))
 
-            if (totalFlips >= maxFlips || !won) {
-                if (!won) { 
-                    await flipMessage.edit(getMessageContent(user, maxFlips-totalFlips, record, `Sit`))
-                    await checkAndAssignDusted(guild, user, wager) 
-                } else {
-                    await flipMessage.edit(getMessageContent(user, maxFlips-totalFlips, record, `You made it through ${process.env.PEEPO_COMFY_EMOJI}`))
-                }
-                return
-            }
+    for (;;) {
+        await sleep(Math.max(0, deadline - Date.now()))
 
-            deadline = Date.now() + COUNTDOWN_MS
-            await flipMessage.edit(getMessageContent(user, maxFlips-totalFlips, record, `Flipping ${countdownTo(deadline)}`))
+        const wager = flipAll ? user.points : points
+        const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
+        if (won) {
+            user = await updateUserWin(user, wager)
+            results.push(WIN)
+        } else {
+            user = await updateUserLoss(user, wager)
+            results.push(LOSS)
         }
-    } else {
-        await message.channel.send({
-            content: `Under Development`, 
-        })
+
+        const net = user.points - startingPoints
+        const flipsLeft = maxFlips - results.length
+        const broke = flipAll ? !won : flipsLeft > 0 && user.points < points
+
+        if (broke) {
+            await flipMessage.edit(getMessageContent(user, results, maxFlips, net,
+                flipAll ? `Sit` : `You ain't got ${points}. Sit`))
+            await checkAndAssignDusted(guild, user, wager)
+            return
+        }
+
+        if (flipsLeft === 0) {
+            await flipMessage.edit(getMessageContent(user, results, maxFlips, net,
+                flipAll ? `You made it through ${process.env.PEEPO_COMFY_EMOJI}` : `${maxFlips} flips, ${getNetLine(net)}`))
+            await checkAndAssignDusted(guild, user, wager)
+            return
+        }
+
+        deadline = Date.now() + COUNTDOWN_MS
+        await flipMessage.edit(getMessageContent(user, results, maxFlips, net, `Flipping ${countdownTo(deadline)}`))
     }
 }
 
-const flipOnce = async (guild: Guild, user: IUser, points: number, message) => {
+const flipOnce = async (guild: Guild, user: IUser, points: number, message: Message<boolean>) => {
     const arr = new Uint8Array(1);
     getRandomValues(arr);
     const roll = arr[0]

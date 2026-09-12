@@ -1,21 +1,14 @@
+import textCommand from "../util/textCommand";
 import { getAllUsers } from "../util/userUtil";
-import { ICallback, ICommand } from "../wokTypes";
 
-const serverStats: ICommand = {
+const serverStats = textCommand({
     name: 'serverStats',
     category: 'statCheck',
     description: 'Check stats',
     minArgs: 0,
     maxArgs: 0,
     cooldown: '30s',
-    callback: async (options: ICallback) => {
-        const { message } = options
-
-        if (!(message.channel.type === "GUILD_TEXT")) {
-            message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
-            return
-        }
-
+}, async (ctx) => {
         const users = await getAllUsers()
 
         let defaultPointsAggregate = 0
@@ -72,7 +65,7 @@ const serverStats: ICommand = {
         const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
         const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
 
-        message.reply({content: 
+        await ctx.message.reply({content:
 `**Server Stats**
 \`\`\`Ruby
 Existing Points      ${user.points.toLocaleString('en-US')}
@@ -93,8 +86,7 @@ Challenges           ${user.challengesWon.toLocaleString('en-US')} Total / ${use
 Wars                 ${user.warsWon.toLocaleString('en-US')} Total / ${user.warPointsWon.toLocaleString('en-US')} Points
 R P S                ${user.rpsWon.toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Points
 \`\`\``
-            })
-    }
-}
+        })
+})
 
 export default serverStats
