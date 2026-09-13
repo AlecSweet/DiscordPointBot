@@ -2,7 +2,7 @@ import { MongoMemoryServer } from "mongodb-memory-server"
 import mongoose from "mongoose"
 import userModel from "../db/user"
 import { settleUser } from "../util/userUtil"
-import { addUserMutex } from "../util/userMutexes"
+import { addUserMutex, userMutexes } from "../util/userMutexes"
 
 const MINUTE = 60000
 const DISCORD_MESSAGE_LIMIT = 2000
@@ -55,6 +55,7 @@ const give = require("../commands/give").default
 const top = require("../commands/leaderboard").default
 const help = require("../commands/help").default
 const stats = require("../commands/stats").default
+const checkPoints = require("../commands/checkPoints").default
 const serverStats = require("../commands/serverStats").default
 const assignMostPointsRole = require("../events/assignMostPointsRole").default
 /* eslint-enable @typescript-eslint/no-var-requires */
@@ -132,6 +133,7 @@ const fakeContext = (authorId: string) => {
     let files: IFakeFile[] = []
     let collect: IFakeCollectorHandler | undefined
     let end: IFakeCollectorHandler | undefined
+    let deleted = false
 
     const apply = (payload: IFakePayload) => {
         if (payload.content !== undefined) record(payload.content)
@@ -139,6 +141,7 @@ const fakeContext = (authorId: string) => {
     }
     const sent = {
         edit: async (payload: IFakePayload) => { edits.push(payload); apply(payload); return sent },
+        delete: async () => { deleted = true; return sent },
         react: async () => {},
         channel: {} as unknown,
         createMessageComponentCollector: () => ({
@@ -181,6 +184,7 @@ const fakeContext = (authorId: string) => {
             })
         },
         hasButton: () => collect !== undefined,
+        deleted: () => deleted,
         expire: async () => {
             if (!end) throw new Error("nothing to expire")
             await end()
@@ -370,7 +374,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the last flip has doubled five times", panel.includes("5) ✅ 320"), panel)
 }},
 
-{name: "flip: five lines show while it is going, ten once it is done", fn: async () => {
+{name: "flip: five lines show while it is going and once it is done", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -383,10 +387,10 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("five lines on the last running panel", numberedLines(running), 5)
     check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
     check("the sixth flip has already scrolled off", !running.includes(" 6) "), running)
-    eq("ten lines once it is done", numberedLines(finished), 10)
+    eq("still five lines once it is done", numberedLines(finished), 5)
 }},
 
-{name: "martingale: five lines show while it is going, ten once it is done", fn: async () => {
+{name: "martingale: five lines show while it is going and once it is done", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -399,7 +403,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("five ladders on the last running panel", numberedLines(running), 5)
     check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
     check("the sixth ladder has already scrolled off", !running.includes(" 6) "), running)
-    eq("ten ladders once it is done", numberedLines(finished), 10)
+    eq("still five ladders once it is done", numberedLines(finished), 5)
 }},
 
 {name: "flip: the full record is attached as a file once flips scroll off", fn: async () => {
@@ -487,8 +491,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const panel = written[written.length - 1]
 
     check("the newest ladder keeps its true number", panel.includes("12) "), panel)
-    check("the oldest shown ladder is the third, right-aligned", panel.includes(" 3) "), panel)
-    check("the first two ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
+    check("the oldest shown ladder is the eighth, right-aligned", panel.includes(" 8) "), panel)
+    check("the earlier ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 7) "), panel)
 }},
 
 {name: "martingale: the ladder file only shows up once lines scroll off", fn: async () => {
@@ -859,12 +863,10 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         ctx.replies.join(""))
     check("the button hands back the whole list", commands.includes("!flip"), commands)
 
+    const editsBeforeExpiry = ctx.edits.length
     await ctx.expire()
-    const expired = ctx.edits[ctx.edits.length - 1]
-    check("the expired message drops its button", (expired?.components ?? ["button"]).length === 0,
-        JSON.stringify(expired))
-    check("the expired message says how to get the list back", (expired?.content ?? "").includes("!help"),
-        JSON.stringify(expired))
+    check("the button message is gone", ctx.deleted(), JSON.stringify(ctx.edits))
+    eq("nothing was left behind saying it expired", ctx.edits.length, editsBeforeExpiry)
 }},
 
 {name: "stats: the button hands the numbers to whoever presses it", fn: async () => {
@@ -890,6 +892,37 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await userModel.collection.updateOne({id: "111"}, {$set: {points: 12345}})
     const panel = await pressButton(ctx)
     check("the fresh balance is shown", panel.includes("12,345"), panel)
+}},
+
+// The user mutexes carry a 10 second timeout and flip holds one across its whole loop, so
+// taking the lock to read a balance leaves the presser on a deferred reply that never gets
+// edited, and leaves !points with nothing to say at all.
+{name: "stats: the panel answers while the target's lock is held", fn: async () => {
+    await seed("111", {points: 700})
+    const ctx = fakeContext("111")
+    await stats.callback({message: ctx.message, args: [], guild: guildWith("111")})
+
+    const held = userMutexes.get("111")
+    if (!held) throw new Error("no mutex for 111")
+    const release = await held.acquire()
+    const panel = await pressButton(ctx, "222")
+    release()
+
+    check("the presser got the stats", panel.includes("Peak Points"), panel)
+    check("with the balance in them", panel.includes("700"), panel)
+}},
+
+{name: "points: the balance answers while the user's lock is held", fn: async () => {
+    await seed("111", {points: 700})
+    const ctx = fakeContext("111")
+
+    const held = userMutexes.get("111")
+    if (!held) throw new Error("no mutex for 111")
+    const release = await held.acquire()
+    await checkPoints.callback({message: ctx.message, args: [], guild: guildWith("111")})
+    release()
+
+    check("the balance was reported", (ctx.replies[0] ?? "").includes("700"), ctx.replies.join(""))
 }},
 
 {name: "serverStats: the button hands the totals to whoever presses it", fn: async () => {

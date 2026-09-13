@@ -13,7 +13,6 @@ const serverStats = textCommand({
 }, async (ctx) => {
     await ephemeralButton(ctx.message, {
         title: `**Server Stats**`,
-        command: 'serverStats',
         label: `Show Server Stats`,
         build: async () => ({content: formatServerStats(await getAllUsers())})
     })

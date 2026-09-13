@@ -1,6 +1,6 @@
 import { parseTarget } from "../util/args";
 import textCommand from "../util/textCommand";
-import withUserLock from "../util/userLock";
+import { settleUser } from "../util/userUtil";
 
 const points = textCommand({
     name: 'points',
@@ -16,11 +16,10 @@ const points = textCommand({
         return
     }
 
-    await withUserLock(id, ctx.message, async (user) => {
-        await ctx.message.reply({content: ctx.args[0] ?
-            `${ctx.args[0]} has ${user.points} points` :
-            `You have ${user.points} points`})
-    })
+    const user = await settleUser(id)
+    await ctx.message.reply({content: ctx.args[0] ?
+        `${ctx.args[0]} has ${user.points} points` :
+        `You have ${user.points} points`})
 })
 
 export default points

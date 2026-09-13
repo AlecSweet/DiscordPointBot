@@ -16,8 +16,7 @@ dotenv.config()
 
 const MAX_WINS = 50
 const MIN_BET_PCT = 0.01
-const MAX_LINES = 10
-const RUNNING_LINES = 5
+const LINES = 5
 const ROUND_MS = 2000
 const LADDER_FILE = 'martingale.txt'
 
@@ -54,7 +53,7 @@ interface INumberedRound {
     flips: string[]
 }
 
-const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = '', lines = MAX_LINES): any => {
+const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = ''): any => {
     const build = (body: string) =>
 `**<@${user.id}>'s Martinelli**
 \`\`\`ansi
@@ -64,7 +63,7 @@ ${body}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, formatRounds(rounds, lines))}
+    return {content: fitToMessageLimit(build, formatRounds(rounds))}
 }
 
 const numberRounds = (rounds: string[][]): INumberedRound[] =>
@@ -79,9 +78,9 @@ const renderRounds = (numbered: INumberedRound[]): string => {
         .join('\n')
 }
 
-const formatRounds = (rounds: string[][], lines: number): string => renderRounds(numberRounds(rounds).slice(-lines))
+const formatRounds = (rounds: string[][]): string => renderRounds(numberRounds(rounds).slice(-LINES))
 
-const hasScrolledOff = (rounds: string[][]): boolean => numberRounds(rounds).length > MAX_LINES
+const hasScrolledOff = (rounds: string[][]): boolean => numberRounds(rounds).length > LINES
 
 
 const getNetLine = (net: number): string => {
@@ -111,7 +110,7 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
     let deadline = Date.now() + ROUND_MS
     const martingaleMessage = await message.channel.send(
-        getMessageContent(user, bet, rounds, wins, maxWins, 0, `Flipping ${countdownTo(deadline)}`, RUNNING_LINES))
+        getMessageContent(user, bet, rounds, wins, maxWins, 0, `Flipping ${countdownTo(deadline)}`))
 
     for (;;) {
         await sleep(Math.max(0, deadline - Date.now()))
@@ -147,6 +146,6 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
         deadline = Date.now() + ROUND_MS
         await martingaleMessage.edit(getMessageContent(user, bet, rounds, wins, maxWins, net,
-            `Flipping ${countdownTo(deadline)}`, RUNNING_LINES))
+            `Flipping ${countdownTo(deadline)}`))
     }
 }

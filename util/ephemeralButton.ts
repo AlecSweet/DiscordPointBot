@@ -1,19 +1,16 @@
 import { Message } from "discord.js";
 import { IReplyable } from "./userLock";
 import sendPanel, { IPanel } from "./sendPanel";
-import * as dotenv from "dotenv"
-dotenv.config()
 
 const BUTTON_LIFE_MS = 3 * 60 * 1000
 
 interface IEphemeralButton {
     title: string
-    command: string
     label: string
     build: (replyTo: IReplyable) => Promise<IPanel | undefined>
 }
 
-const ephemeralButton = async (message: Message<boolean>, {title, command, label, build}: IEphemeralButton): Promise<void> => {
+const ephemeralButton = async (message: Message<boolean>, {title, label, build}: IEphemeralButton): Promise<void> => {
     const buttonMessage = await message.reply({
         content: title,
         components: [{
@@ -42,10 +39,7 @@ const ephemeralButton = async (message: Message<boolean>, {title, command, label
     })
 
     buttonCollector.on('end', async () => {
-        await buttonMessage.edit({
-            content: `${title} expired, run !${command} again ${process.env.SHRUGGERS_EMOJI}`,
-            components: []
-        }).catch((err) => console.log(err))
+        await buttonMessage.delete().catch((err) => console.log(err))
     })
 }
 
