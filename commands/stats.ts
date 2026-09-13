@@ -2,7 +2,7 @@ import { IUser } from "../db/user";
 import { parseTarget } from "../util/args";
 import ephemeralButton from "../util/ephemeralButton";
 import textCommand from "../util/textCommand";
-import withUserLock from "../util/userLock";
+import { settleUser } from "../util/userUtil";
 
 const stats = textCommand({
     name: 'stats',
@@ -20,9 +20,8 @@ const stats = textCommand({
 
     await ephemeralButton(ctx.message, {
         title: `**<@${id}>'s Stats**`,
-        command: 'stats',
         label: `Show Stats`,
-        build: (replyTo) => withUserLock(id, replyTo, async (user) => ({content: formatStats(user)}))
+        build: async () => ({content: formatStats(await settleUser(id))})
     })
 })
 

@@ -247,7 +247,6 @@ LeastDebt       Luckiest         Wars
 
         await ephemeralButton(message, {
             title: `**${LeaderboardTitles[leaderboardType]}**`,
-            command: 'top',
             label: `Show Leaderboard`,
             build: () => formatLeaderboard(leaderboardType, numTop, guild)
         })

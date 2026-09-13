@@ -32,7 +32,6 @@ const help = textCommand({
 }, async (ctx) => {
     await ephemeralButton(ctx.message, {
         title: `**Point Bot Commands**`,
-        command: 'help',
         label: `Show Commands`,
         build: async () => ({content: commandList})
     })

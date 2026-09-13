@@ -17,8 +17,7 @@ dotenv.config()
 const COUNTDOWN_MS = 3000
 const MAX_FLIPS = 50
 const MIN_MULTI_BET_PCT = 0.02
-const MAX_LINES = 10
-const RUNNING_LINES = 5
+const LINES = 5
 const RECORD_FILE = 'flips.txt'
 const WIN = '✅'
 const LOSS = '❌'
@@ -61,7 +60,7 @@ interface IFlipResult {
     points: number
 }
 
-const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number, net: number, bet: number, final = '', lines = MAX_LINES): any => {
+const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number, net: number, bet: number, final = ''): any => {
     const wins = results.filter(result => result.won).length
     const losses = results.length - wins
 
@@ -74,7 +73,7 @@ ${body}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, formatRecord(results, lines))}
+    return {content: fitToMessageLimit(build, formatRecord(results))}
 }
 
 const renderFlips = (results: IFlipResult[], from: number): string => {
@@ -85,8 +84,8 @@ const renderFlips = (results: IFlipResult[], from: number): string => {
         .join('\n')
 }
 
-const formatRecord = (results: IFlipResult[], lines: number): string =>
-    renderFlips(results.slice(-lines), Math.max(0, results.length - lines))
+const formatRecord = (results: IFlipResult[]): string =>
+    renderFlips(results.slice(-LINES), Math.max(0, results.length - LINES))
 
 
 const getNetLine = (net: number): string => {
@@ -100,7 +99,7 @@ const getNetLine = (net: number): string => {
 }
 
 const finishFlips = async (flipMessage: Message<boolean>, results: IFlipResult[], panel: {content: string}) => {
-    const scrolledOff = results.length > MAX_LINES
+    const scrolledOff = results.length > LINES
 
     await sendPanel(options => flipMessage.edit(options), {
         ...panel,
@@ -114,7 +113,7 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
 
     let deadline = Date.now() + COUNTDOWN_MS
     const flipMessage = await message.channel.send(
-        getMessageContent(user, results, maxFlips, 0, flipAll ? user.points : points, `Flipping ${countdownTo(deadline)}`, RUNNING_LINES))
+        getMessageContent(user, results, maxFlips, 0, flipAll ? user.points : points, `Flipping ${countdownTo(deadline)}`))
 
     for (;;) {
         await sleep(Math.max(0, deadline - Date.now()))
@@ -148,7 +147,7 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
 
         deadline = Date.now() + COUNTDOWN_MS
         await flipMessage.edit(getMessageContent(user, results, maxFlips, net,
-            flipAll ? user.points : points, `Flipping ${countdownTo(deadline)}`, RUNNING_LINES))
+            flipAll ? user.points : points, `Flipping ${countdownTo(deadline)}`))
     }
 }
 
