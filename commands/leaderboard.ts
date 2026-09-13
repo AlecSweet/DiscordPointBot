@@ -2,6 +2,7 @@ import userModel from "../db/user";
 import isValidNumberArg from "../util/isValidNumberArg";
 import { deleteMarkdown } from "../util/isValidUserArg";
 import textCommand from "../util/textCommand";
+import { settledPoints, settledSecondsActive } from "../util/userUtil";
 
 enum LeaderboardTypes {
     points = 'points',
@@ -87,7 +88,7 @@ enum LeaderboardTitles {
 
 
 const leaderboardAggregates = {
-    points: [{$sort:{points:-1}}],
+    points: [{$set: {points: settledPoints}}, {$sort: {points: -1}}],
     mostDebt: [
         {$addFields: { 
             mostDebt: { $subtract: [{ $add: [ {$add: [ {$floor: { $divide: [ "$secondsActive", 60] } }, 100]}, "$pointsClaimed"]}, "$points"]}}},
@@ -139,7 +140,7 @@ const leaderboardAggregates = {
     ],
     pointsWon: [{$sort:{pointsWon:-1}}],
     pointsLost: [{$sort:{pointsLost:-1}}],
-    secondsActive: [{$sort:{secondsActive:-1}}],
+    secondsActive: [{$set: {secondsActive: settledSecondsActive}}, {$sort: {secondsActive: -1}}],
     pointsGiven: [{$match: { pointsGiven: {$gt: 0}}}, {$sort:{pointsGiven:-1}}],
     pointsRecieved: [{$match: { pointsRecieved: {$gt: 0}}}, {$sort:{pointsRecieved:-1}}],
     maxWinStreak: [{$match: { maxWinStreak: {$gt: 0}}}, {$sort:{maxWinStreak:-1}}],
@@ -260,7 +261,7 @@ LeastDebt       Unluckiest
 
         await message.reply({
             content: `**${LeaderboardTitles[leaderboardType]} ${numTop}**\n\`\`\`
-${formatedResults.join('')}\`\`\`${leaderboardType === 'points' || leaderboardType === 'secondsActive' ? `${process.env.SHRUGGERS_EMOJI}*ᴹᶦᵍʰᵗ ᵇᵉ ᵃ ᵇᶦᵗ ᵇᵉʰᶦⁿᵈ`: ''}`
+${formatedResults.join('')}\`\`\``
         })
 })
 
