@@ -30,7 +30,7 @@ const fakeMessage = () => {
 const seed = async (id: string, fields: Record<string, unknown> = {}) => {
     await userModel.collection.insertOne({id: id, points: 100, secondsActive: 0, flipsWon: 0, flipsLost: 0,
         flipStreak: 0, maxWinStreak: 0, maxLossStreak: 0, pointsWon: 0, pointsLost: 0,
-        activeStartDate: null, ...fields})
+        activeStartDate: null, carriedMs: 0, ...fields})
 }
 
 const tests: {name: string, fn: () => Promise<void>}[] = [
@@ -41,8 +41,11 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const user = await settleUser("accrue1")
     eq("points 100 -> 190", user.points, 190)
     eq("secondsActive 0 -> 5400", user.secondsActive, 5400)
-    eq("activeStartDate advanced exactly 90m (37s remainder kept)",
-        user.activeStartDate?.getTime(), start.getTime() + 90 * MINUTE)
+    check("activeStartDate settled all the way up to now",
+        (user.activeStartDate?.getTime() ?? 0) >= start.getTime() + 90 * MINUTE + 37000,
+        `activeStartDate was ${user.activeStartDate?.toISOString()}`)
+    check("the 37s remainder is carried, not dropped",
+        user.carriedMs >= 37000 && user.carriedMs < MINUTE, `carriedMs was ${user.carriedMs}`)
 }},
 
 {name: "accrual: null activeStartDate is a no-op", fn: async () => {
@@ -73,6 +76,72 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const user = await disableUserActivity("disable1")
     eq("points 100 -> 105", user.points, 105)
     eq("activeStartDate cleared", user.activeStartDate, null)
+    check("the 30s that did not fill a minute is banked",
+        user.carriedMs >= 30000 && user.carriedMs < MINUTE, `carriedMs was ${user.carriedMs}`)
+}},
+
+{name: "carry: the banked remainder pays out on the next session", fn: async () => {
+    await seed("carry1", {activeStartDate: new Date(Date.now() - (5 * MINUTE + 30000))})
+    await disableUserActivity("carry1")
+
+    await startUserActivity("carry1")
+    await userModel.collection.updateOne({id: "carry1"},
+        {$set: {activeStartDate: new Date(Date.now() - 40000)}})
+    const user = await settleUser("carry1")
+
+    eq("30s banked plus 40s live is a whole point", user.points, 106)
+    eq("secondsActive 300 -> 360", user.secondsActive, 360)
+    check("10s stays banked", user.carriedMs >= 10000 && user.carriedMs < 11000,
+        `carriedMs was ${user.carriedMs}`)
+}},
+
+{name: "carry: three 25s sessions add up to a point instead of vanishing", fn: async () => {
+    await seed("carry2", {activeStartDate: null, carriedMs: 0})
+
+    const session = async () => {
+        await startUserActivity("carry2")
+        await userModel.collection.updateOne({id: "carry2"},
+            {$set: {activeStartDate: new Date(Date.now() - 25000)}})
+        return await disableUserActivity("carry2")
+    }
+
+    let user = await session()
+    eq("25s is not a point yet", user.points, 100)
+    user = await session()
+    eq("50s is still not a point", user.points, 100)
+    check("but all 50s are banked", user.carriedMs >= 50000 && user.carriedMs < MINUTE,
+        `carriedMs was ${user.carriedMs}`)
+
+    user = await session()
+    eq("75s crosses the minute", user.points, 101)
+    eq("secondsActive 0 -> 60", user.secondsActive, 60)
+    check("15s carries into the next session",
+        user.carriedMs >= 15000 && user.carriedMs < 16000, `carriedMs was ${user.carriedMs}`)
+}},
+
+{name: "carry: settling an inactive user leaves the bank untouched", fn: async () => {
+    await seed("carry3", {activeStartDate: null, carriedMs: 45000})
+    const user = await settleUser("carry3")
+    eq("points unchanged", user.points, 100)
+    eq("activeStartDate still null", user.activeStartDate, null)
+    eq("carry still 45000", user.carriedMs, 45000)
+}},
+
+{name: "carry: a legacy doc with no carriedMs starts banking from zero", fn: async () => {
+    await userModel.collection.insertOne({id: "carry4", points: 100, secondsActive: 0,
+        activeStartDate: new Date(Date.now() - 90000)})
+    const user = await disableUserActivity("carry4")
+    eq("90s is one point", user.points, 101)
+    check("the odd 30s is banked", user.carriedMs >= 30000 && user.carriedMs < 31000,
+        `carriedMs was ${user.carriedMs}`)
+}},
+
+{name: "carry: a full minute of bank is credited even with no live session", fn: async () => {
+    await seed("carry5", {activeStartDate: null, carriedMs: 90000})
+    const user = await settleUser("carry5")
+    eq("the banked minute is paid out", user.points, 101)
+    eq("secondsActive 0 -> 60", user.secondsActive, 60)
+    eq("30s left in the bank", user.carriedMs, 30000)
 }},
 
 {name: "startUserActivity: sets the date, second call is idempotent", fn: async () => {

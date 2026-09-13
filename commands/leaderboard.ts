@@ -1,10 +1,11 @@
 import { Guild } from "discord.js";
 import userModel from "../db/user";
-import ephemeralButton, { IButtonPanel } from "../util/ephemeralButton";
+import ephemeralButton from "../util/ephemeralButton";
 import { MAX_MESSAGE_LENGTH } from "../util/fitToMessageLimit";
 import isValidNumberArg from "../util/isValidNumberArg";
 import { deleteMarkdown } from "../util/isValidUserArg";
 import recordFile from "../util/recordFile";
+import { IPanel } from "../util/sendPanel";
 import textCommand from "../util/textCommand";
 import { settledPoints, settledSecondsActive } from "../util/userUtil";
 
@@ -254,7 +255,7 @@ LeastDebt       Luckiest         Wars
 
 export default leaderboard
 
-const formatLeaderboard = async (leaderboardType: string, numTop: number, guild: Guild): Promise<IButtonPanel> => {
+const formatLeaderboard = async (leaderboardType: string, numTop: number, guild: Guild): Promise<IPanel> => {
     const result = await userModel.aggregate([
         ...(leaderboardAggregates[leaderboardType]),
         {$limit: numTop}
@@ -290,7 +291,7 @@ ${entries.join('')}\`\`\``
 
     return {
         content: build(shown),
-        files: shown.length < formatedResults.length ? [recordFile(formatedResults.join(''), RECORD_FILE)] : []
+        ...recordFile(shown.length < formatedResults.length ? formatedResults.join('') : undefined, RECORD_FILE)
     }
 }
 

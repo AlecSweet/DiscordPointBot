@@ -31,6 +31,7 @@ const formatServerStats = (users: IUser[]): string => {
             points: aggUser.points + curUser.points , 
             maxPoints: Math.max(aggUser.maxPoints ?? 0, curUser.maxPoints ?? 0) ,
             activeStartDate: curUser.activeStartDate ,
+            carriedMs: (aggUser.carriedMs ?? 0) + (curUser.carriedMs ?? 0) ,
             flipsLost: aggUser.flipsLost + curUser.flipsLost ,
             flipsWon: aggUser.flipsWon + curUser.flipsWon ,
             pointsWon: aggUser.pointsWon + curUser.pointsWon ,

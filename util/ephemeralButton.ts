@@ -1,20 +1,16 @@
-import { Message, MessageAttachment } from "discord.js";
+import { Message } from "discord.js";
 import { IReplyable } from "./userLock";
+import sendPanel, { IPanel } from "./sendPanel";
 import * as dotenv from "dotenv"
 dotenv.config()
 
 const BUTTON_LIFE_MS = 3 * 60 * 1000
 
-export interface IButtonPanel {
-    content: string
-    files?: MessageAttachment[]
-}
-
 interface IEphemeralButton {
     title: string
     command: string
     label: string
-    build: (replyTo: IReplyable) => Promise<IButtonPanel | undefined>
+    build: (replyTo: IReplyable) => Promise<IPanel | undefined>
 }
 
 const ephemeralButton = async (message: Message<boolean>, {title, command, label, build}: IEphemeralButton): Promise<void> => {
@@ -42,7 +38,7 @@ const ephemeralButton = async (message: Message<boolean>, {title, command, label
         if (panel === undefined) {
             return
         }
-        await i.editReply(panel).catch((err) => console.log(err))
+        await sendPanel(options => i.editReply(options), panel).catch((err) => console.log(err))
     })
 
     buttonCollector.on('end', async () => {

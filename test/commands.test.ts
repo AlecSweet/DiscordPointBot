@@ -505,6 +505,24 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("named for the command", long.files()[0].name, "martingale.txt")
 }},
 
+// Naming attachments at all, even an empty list, makes Discord check Attach Files on the
+// edit and answer 50013 when the bot does not have it in the channel.
+{name: "a panel with nothing to attach never mentions attachments", fn: async () => {
+    rollSequence(255, 0)
+    await seed("111", {points: 1000})
+    const flipped = fakeContext("111")
+    await flip.callback({message: flipped.message, args: ["100", "4"], guild: guildWith("111")})
+    const flipEdit = flipped.edits[flipped.edits.length - 1]
+    check("the finished flip panel has no files key", !("files" in flipEdit), JSON.stringify(Object.keys(flipEdit)))
+
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const laddered = fakeContext("111")
+    await martingale.callback({message: laddered.message, args: ["10", "5"], guild: guildWith("111")})
+    const ladderEdit = laddered.edits[laddered.edits.length - 1]
+    check("the finished ladder panel has no files key", !("files" in ladderEdit), JSON.stringify(Object.keys(ladderEdit)))
+}},
+
 {name: "martingale: the attached ladder holds every round", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})

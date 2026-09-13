@@ -7,6 +7,7 @@ export interface IUser {
     points: number
     maxPoints: number
     activeStartDate: Date | null
+    carriedMs: number
     flipsLost: number
     flipsWon: number
     pointsWon: number
@@ -43,7 +44,7 @@ export interface IUser {
 
 type NumericField = {[K in keyof IUser]: IUser[K] extends number ? K : never}[keyof IUser]
 
-type PipelineOwnedField = "activeStartDate" | "maxPoints"
+type PipelineOwnedField = "activeStartDate" | "carriedMs" | "maxPoints"
 type IncrementOnlyField = "points" | "secondsActive"
 
 export interface IncOp {
@@ -81,6 +82,10 @@ const userSchema = new Schema({
     activeStartDate: {
         type: Date,
         default: null
+    },
+    carriedMs: {
+        type: Number,
+        default: 0
     },
     flipsLost: {
         type: Number,
