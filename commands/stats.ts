@@ -1,4 +1,6 @@
+import { IUser } from "../db/user";
 import { parseTarget } from "../util/args";
+import ephemeralButton from "../util/ephemeralButton";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
 
@@ -16,39 +18,50 @@ const stats = textCommand({
         return
     }
 
-    await withUserLock(id, ctx.message, async (user) => {
-        const days = Math.floor(user.secondsActive / 86400)
-        const secLeftAfterDays = user.secondsActive % 86400
-        const hours = Math.floor(secLeftAfterDays / 3600)
-        const secLeftAfterHours = secLeftAfterDays % 3600
-        const minutes = Math.floor(secLeftAfterHours / 60)
+    await ephemeralButton(ctx.message, {
+        title: `**<@${id}>'s Stats**`,
+        command: 'stats',
+        label: `Show Stats`,
+        build: (replyTo) => withUserLock(id, replyTo, async (user) => ({content: formatStats(user)}))
+    })
+})
 
-        const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
-        const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
-        const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
+export default stats
 
-        const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
-        const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
-        const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
+const formatStats = (user: IUser): string => {
+    const days = Math.floor(user.secondsActive / 86400)
+    const secLeftAfterDays = user.secondsActive % 86400
+    const hours = Math.floor(secLeftAfterDays / 3600)
+    const secLeftAfterHours = secLeftAfterDays % 3600
+    const minutes = Math.floor(secLeftAfterHours / 60)
 
-        const wpPF = (user.warsWon + user.warsLost) > 0 ? (Math.round(((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost)) * 10) / 10).toFixed(1) : 0
-        const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
-        const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
+    const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
+    const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
+    const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
 
-        const rpPF = (user.rpsWon + user.rpsLost) > 0 ? (Math.round(((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost)) * 10) / 10).toFixed(1) : 0
-        const rpPL = user.rpsLost > 0 ? (Math.round((user.rpsPointsLost / user.rpsLost) * 10) / 10).toFixed(1) : 0
-        const rpPW = user.rpsWon > 0 ? (Math.round((user.rpsPointsWon / user.rpsWon) * 10) / 10).toFixed(1) : 0
+    const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
+    const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
+    const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
 
-        await ctx.message.reply({content:
+    const wpPF = (user.warsWon + user.warsLost) > 0 ? (Math.round(((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost)) * 10) / 10).toFixed(1) : 0
+    const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
+    const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
+
+    const rpPF = (user.rpsWon + user.rpsLost) > 0 ? (Math.round(((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost)) * 10) / 10).toFixed(1) : 0
+    const rpPL = user.rpsLost > 0 ? (Math.round((user.rpsPointsLost / user.rpsLost) * 10) / 10).toFixed(1) : 0
+    const rpPW = user.rpsWon > 0 ? (Math.round((user.rpsPointsWon / user.rpsWon) * 10) / 10).toFixed(1) : 0
+
+    return (
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
 Points          ${user.points.toLocaleString('en-US')}
+Peak Points     ${user.maxPoints.toLocaleString('en-US')}
 Active          ${days} days / ${hours} hours / ${minutes} minutes
 Debt            ${Math.max((user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + 100)) * -1, 0).toLocaleString('en-US')}
 
 Points Earned   ${Math.floor(user.secondsActive/60).toLocaleString('en-US')}
 Point Gifts     ${user.pointsGiven.toLocaleString('en-US')} Given / ${user.pointsRecieved.toLocaleString('en-US')} Received
-Points Claimed  ${user.pointsClaimed.toLocaleString('en-US')} Claimed   
+Points Claimed  ${user.pointsClaimed.toLocaleString('en-US')} Claimed
 
 Flips           ${(user.flipsWon+user.flipsLost).toLocaleString('en-US')} Total / ${user.flipsWon.toLocaleString('en-US')} Won / ${user.flipsLost.toLocaleString('en-US')} Lost
 Returns         ${(user.pointsWon+user.pointsLost).toLocaleString('en-US')} Total / ${user.pointsWon.toLocaleString('en-US')} Won / ${user.pointsLost.toLocaleString('en-US')} Lost
@@ -68,8 +81,5 @@ R P S           ${(user.rpsWon+user.rpsLost).toLocaleString('en-US')} Total / ${
 Returns         ${(user.rpsPointsWon+user.rpsPointsLost).toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Won / ${user.rpsPointsLost.toLocaleString('en-US')} Lost
 Avg Bets        ${rpPF.toLocaleString('en-US')} Avg Bet / ${rpPW.toLocaleString('en-US')} Avg Win / ${rpPL.toLocaleString('en-US')} Avg Loss
 \`\`\``
-        })
-    })
-})
-
-export default stats
+    )
+}

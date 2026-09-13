@@ -10,14 +10,17 @@ export const settledSecondsActive = {$add: [{$ifNull: ["$secondsActive", 0]}, {$
 const addAccruedPoints = {$add: [{$ifNull: ["$points", 0]}, "$accruedMinutes"]}
 const addSecondsActive = {$add: [{$ifNull: ["$secondsActive", 0]}, {$multiply: ["$accruedMinutes", SECONDS_PER_MINUTE]}]}
 const advanceActiveStartDate = {$add: ["$activeStartDate", {$multiply: ["$accruedMinutes", MS_PER_MINUTE]}]}
+const seededMaxPoints = {$ifNull: ["$maxPoints", {$ifNull: ["$points", 0]}]}
+const raisedMaxPoints = {$max: ["$maxPoints", "$points"]}
 
 const accrualPipeline = (disableActivity: boolean) => [
-    {$set: {accruedMinutes: accruedMinutesSinceStart}},
+    {$set: {accruedMinutes: accruedMinutesSinceStart, maxPoints: seededMaxPoints}},
     {$set: {
         points: addAccruedPoints,
         secondsActive: addSecondsActive,
         activeStartDate: disableActivity ? null : advanceActiveStartDate
     }},
+    {$set: {maxPoints: raisedMaxPoints}},
     {$unset: "accruedMinutes"}
 ]
 
@@ -50,33 +53,35 @@ export const inc = (by: number): IncOp => ({op: "inc", by: by})
 export const set = <V>(to: V): SetOp<V> => ({op: "set", to: to})
 
 export const updateUser = async (id: string, update: IUserUpdate): Promise<IUser> => {
-    const mongoUpdate = toMongoUpdate(update)
-    if (Object.keys(mongoUpdate).length === 0) return await getOrInsert(id)
+    const pipeline = toUpdatePipeline(update)
+    if (pipeline.length === 0) return await getOrInsert(id)
 
-    const updated = await userModel.findOneAndUpdate({id: id}, mongoUpdate, {new: true}).lean()
+    const updated = await userModel.findOneAndUpdate({id: id}, pipeline, {new: true}).lean()
     if (updated) return updated
 
     await insertUser(id)
-    const retried = await userModel.findOneAndUpdate({id: id}, mongoUpdate, {new: true}).lean()
+    const retried = await userModel.findOneAndUpdate({id: id}, pipeline, {new: true}).lean()
     if (!retried) throw new Error(`updateUser: user "${id}" vanished between insert and update`)
     return retried
 }
 
-const toMongoUpdate = (update: IUserUpdate) => {
-    const $set: Record<string, unknown> = {}
-    const $inc: Record<string, number> = {}
+const toUpdatePipeline = (update: IUserUpdate) => {
+    const assignments: Record<string, unknown> = {}
 
     for (const [field, op] of Object.entries(update) as [string, IncOp | SetOp<unknown> | undefined][]) {
         if (op === undefined) continue
-        if (op.op === "inc") { $inc[field] = op.by; continue }
-        if (op.op === "set") { $set[field] = op.to; continue }
+        if (op.op === "inc") { assignments[field] = {$add: [{$ifNull: [`$${field}`, 0]}, op.by]}; continue }
+        if (op.op === "set") { assignments[field] = {$literal: op.to}; continue }
         throw new Error(`updateUser: "${field}" was given a raw value instead of inc() or set()`)
     }
 
-    return {
-        ...(Object.keys($set).length > 0 ? {$set: $set} : {}),
-        ...(Object.keys($inc).length > 0 ? {$inc: $inc} : {})
-    }
+    if (Object.keys(assignments).length === 0) return []
+
+    return [
+        {$set: {maxPoints: seededMaxPoints}},
+        {$set: assignments},
+        {$set: {maxPoints: raisedMaxPoints}}
+    ]
 }
 
 const getOrInsert = async (id: string): Promise<IUser> => {

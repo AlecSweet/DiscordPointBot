@@ -10,21 +10,22 @@ import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
-import { historyButton, toPages, watchFullHistory } from "../util/fullHistory";
+import recordFile from "../util/recordFile";
 dotenv.config()
 
 const MAX_WINS = 50
 const MIN_BET_PCT = 0.01
 const MAX_LINES = 10
+const RUNNING_LINES = 5
 const ROUND_MS = 2000
-const FULL_LADDER_ID = 'fullMartingale'
+const LADDER_FILE = 'martingale.txt'
 
 const martingale = textCommand({
     name: 'martin',
     aliases: ['shkreli', 'm', 'tarmin', 'martingale'],
     category: 'gambling',
     description: 'martingale shit',
-    expectedArgs: '<# of points to start on (min 1% of your points), "all" or "some"> <# of times to win (max 50) or "some">',
+    expectedArgs: '<# of points to start on (min 1% of your points), "all", "some" or "min"> <# of times to win (max 50) or "some">',
     minArgs: 2,
     maxArgs: 2,
     cooldown: '3s',
@@ -52,20 +53,17 @@ interface INumberedRound {
     flips: string[]
 }
 
-const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = ''): any => {
-    const losses = rounds.reduce((flips, round) => flips + round.length, 0) - wins
-
+const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = '', lines = MAX_LINES): any => {
     const build = (body: string) =>
 `**<@${user.id}>'s Martinelli**
 \`\`\`ansi
-Points: ${user.points}     Net: ${formatNet(net)}     Win: ${wins} of ${maxWins}
-Next Bet: ${bet}     L: ${losses}
+Points: ${user.points} (${formatNet(net)})   Win: ${wins}/${maxWins}   Next Bet: ${bet}
 
 ${body}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, formatRounds(rounds))}
+    return {content: fitToMessageLimit(build, formatRounds(rounds, lines))}
 }
 
 const numberRounds = (rounds: string[][]): INumberedRound[] =>
@@ -80,38 +78,28 @@ const renderRounds = (numbered: INumberedRound[]): string => {
         .join('\n')
 }
 
-const formatRounds = (rounds: string[][]): string => renderRounds(numberRounds(rounds).slice(-MAX_LINES))
+const formatRounds = (rounds: string[][], lines: number): string => renderRounds(numberRounds(rounds).slice(-lines))
 
 const hasScrolledOff = (rounds: string[][]): boolean => numberRounds(rounds).length > MAX_LINES
 
-const getLadderPages = (user: IUser, rounds: string[][]): string[] =>
-    toPages((body, label) =>
-`**<@${user.id}>'s full Martinelli**${label}
-\`\`\`ansi
-${body}
-\`\`\``, renderRounds(numberRounds(rounds)).split('\n'))
 
 const getNetLine = (net: number): string => {
     if (net > 0) {
-        return `up ${net} points ${process.env.PEEPO_COMFY_EMOJI}`
+        return `Up ${net} points ${process.env.PEEPO_COMFY_EMOJI}`
     }
     if (net < 0) {
-        return `down ${Math.abs(net)} points ${process.env.SMODGE_EMOJI}`
+        return `Down ${Math.abs(net)} points ${process.env.SMODGE_EMOJI}`
     }
     return `${process.env.SHRUGGERS_EMOJI}`
 }
 
-const finishMartingale = async (martingaleMessage: Message<boolean>, user: IUser, rounds: string[][], panel: {content: string}) => {
+const finishMartingale = async (martingaleMessage: Message<boolean>, rounds: string[][], panel: {content: string}) => {
     const scrolledOff = hasScrolledOff(rounds)
 
     await martingaleMessage.edit({
         ...panel,
-        components: scrolledOff ? historyButton(FULL_LADDER_ID, 'Full ladder') : []
+        files: scrolledOff ? [recordFile(renderRounds(numberRounds(rounds)), LADDER_FILE)] : []
     })
-
-    if (scrolledOff) {
-        watchFullHistory(martingaleMessage, FULL_LADDER_ID, () => getLadderPages(user, rounds))
-    }
 }
 
 const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins: number, message: Message<boolean>) => {
@@ -122,7 +110,7 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
     let deadline = Date.now() + ROUND_MS
     const martingaleMessage = await message.channel.send(
-        getMessageContent(user, bet, rounds, wins, maxWins, 0, `Flipping ${countdownTo(deadline)}`))
+        getMessageContent(user, bet, rounds, wins, maxWins, 0, `Flipping ${countdownTo(deadline)}`, RUNNING_LINES))
 
     for (;;) {
         await sleep(Math.max(0, deadline - Date.now()))
@@ -144,13 +132,13 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
         const net = user.points - startingPoints
 
         if (wins >= maxWins) {
-            await finishMartingale(martingaleMessage, user, rounds,
+            await finishMartingale(martingaleMessage, rounds,
                 getMessageContent(user, bet, rounds, wins, maxWins, net, getNetLine(net)))
             return
         }
 
         if (bet > user.points) {
-            await finishMartingale(martingaleMessage, user, rounds,
+            await finishMartingale(martingaleMessage, rounds,
                 getMessageContent(user, bet, rounds, wins, maxWins, net, `You ain't got ${bet}. Sit`))
             await checkAndAssignDusted(guild, user, wager)
             return
@@ -158,6 +146,6 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
         deadline = Date.now() + ROUND_MS
         await martingaleMessage.edit(getMessageContent(user, bet, rounds, wins, maxWins, net,
-            `Flipping ${countdownTo(deadline)}`))
+            `Flipping ${countdownTo(deadline)}`, RUNNING_LINES))
     }
 }

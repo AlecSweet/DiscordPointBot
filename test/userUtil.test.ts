@@ -154,6 +154,44 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("maxWinStreak preserved", user.maxWinStreak, 1)
 }},
 
+{name: "maxPoints: a new high is kept when points fall back", fn: async () => {
+    await seed("peak1")
+    let user = await updateUser("peak1", {points: inc(400)})
+    eq("500 is the new high", user.maxPoints, 500)
+    user = await updateUser("peak1", {points: inc(-450)})
+    eq("points fell to 50", user.points, 50)
+    eq("the high held at 500", user.maxPoints, 500)
+}},
+
+{name: "maxPoints: a flip win sets the high and a loss does not lower it", fn: async () => {
+    await seed("peak2")
+    let user = await settleUser("peak2")
+    user = await updateUserWin(user, 50)
+    eq("the win set the high to 150", user.maxPoints, 150)
+    user = await updateUserLoss(user, 100)
+    eq("points down to 50", user.points, 50)
+    eq("the high stayed at 150", user.maxPoints, 150)
+}},
+
+{name: "maxPoints: voice accrual raises the high", fn: async () => {
+    await seed("peak3", {activeStartDate: new Date(Date.now() - 30 * MINUTE)})
+    const user = await settleUser("peak3")
+    eq("points 100 -> 130", user.points, 130)
+    eq("the high followed the accrual", user.maxPoints, 130)
+}},
+
+{name: "maxPoints: a legacy row is seeded from what it held, not what it drops to", fn: async () => {
+    await userModel.collection.insertOne({id: "peak4", points: 50000, secondsActive: 0, activeStartDate: null})
+    const user = await updateUser("peak4", {points: inc(-50000)})
+    eq("wiped out", user.points, 0)
+    eq("the 50000 it was holding is the high", user.maxPoints, 50000)
+}},
+
+{name: "maxPoints: a brand new user starts at DEFAULT_POINTS", fn: async () => {
+    const user = await settleUser("peak5")
+    eq("the high starts at the starting balance", user.maxPoints, 100)
+}},
+
 {name: "updateUser rejects a raw value passed instead of inc()/set()", fn: async () => {
     await seed("raw1")
     try {
@@ -413,6 +451,30 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const msg = fakeMessage()
     eq("1 point is still a valid bet", await parsePoints("1", user, msg.message, "bet"), 1)
     eq("no reply sent", msg.replies.length, 0)
+}},
+
+{name: "parsePoints: \"min\" resolves to the minimum the command enforces", fn: async () => {
+    await seed("min5", {points: 1000})
+    const user = await settleUser("min5")
+    const msg = fakeMessage()
+    eq("min parses to the 200 minimum", await parsePoints("MiN", user, msg.message, "bet", 200), 200)
+    eq("no reply sent", msg.replies.length, 0)
+}},
+
+{name: "parsePoints: \"min\" with no minimum is a single point", fn: async () => {
+    await seed("min6", {points: 1000})
+    const user = await settleUser("min6")
+    const msg = fakeMessage()
+    eq("min parses to 1", await parsePoints("min", user, msg.message, "gift"), 1)
+    eq("no reply sent", msg.replies.length, 0)
+}},
+
+{name: "parsePoints: \"min\" is refused when the stack cannot cover it", fn: async () => {
+    await seed("min7", {points: 150})
+    const user = await settleUser("min7")
+    const msg = fakeMessage()
+    eq("rejected", await parsePoints("min", user, msg.message, "bet", 200), undefined)
+    check("told how much they have", msg.replies[0]?.includes("You only got 150 points"), msg.replies[0])
 }},
 
 {name: "parseCount: a plain number within the cap is taken as written", fn: async () => {

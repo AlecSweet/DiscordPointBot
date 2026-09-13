@@ -5,6 +5,7 @@ dotenv.config()
 export interface IUser {
     id: string
     points: number
+    maxPoints: number
     activeStartDate: Date | null
     flipsLost: number
     flipsWon: number
@@ -42,7 +43,7 @@ export interface IUser {
 
 type NumericField = {[K in keyof IUser]: IUser[K] extends number ? K : never}[keyof IUser]
 
-type PipelineOwnedField = "activeStartDate"
+type PipelineOwnedField = "activeStartDate" | "maxPoints"
 type IncrementOnlyField = "points" | "secondsActive"
 
 export interface IncOp {
@@ -70,6 +71,10 @@ const userSchema = new Schema({
         unique: true,
     },
     points: {
+        type: Number,
+        default: process.env.DEFAULT_POINTS
+    },
+    maxPoints: {
         type: Number,
         default: process.env.DEFAULT_POINTS
     },
