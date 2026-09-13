@@ -3,26 +3,33 @@ import userModel, { IncOp, IUser, IUserUpdate, SetOp } from "../db/user"
 const MS_PER_MINUTE = 60000
 const SECONDS_PER_MINUTE = 60
 
+const fieldOrZero = (field: string) => ({$ifNull: [`$${field}`, 0]})
+
 const elapsedMsSinceStart = {$max: [0, {$subtract: ["$$NOW", {$ifNull: ["$activeStartDate", "$$NOW"]}]}]}
-const accruedMinutesSinceStart = {$floor: {$divide: [elapsedMsSinceStart, MS_PER_MINUTE]}}
-export const settledPoints = {$add: [{$ifNull: ["$points", 0]}, accruedMinutesSinceStart]}
-export const settledSecondsActive = {$add: [{$ifNull: ["$secondsActive", 0]}, {$multiply: [accruedMinutesSinceStart, SECONDS_PER_MINUTE]}]}
-const addAccruedPoints = {$add: [{$ifNull: ["$points", 0]}, "$accruedMinutes"]}
-const addSecondsActive = {$add: [{$ifNull: ["$secondsActive", 0]}, {$multiply: ["$accruedMinutes", SECONDS_PER_MINUTE]}]}
-const advanceActiveStartDate = {$add: ["$activeStartDate", {$multiply: ["$accruedMinutes", MS_PER_MINUTE]}]}
-const seededMaxPoints = {$ifNull: ["$maxPoints", {$ifNull: ["$points", 0]}]}
+const settledActiveStartDate = {$add: ["$activeStartDate", elapsedMsSinceStart]}
+
+const unsettledMs = {$add: [fieldOrZero("carriedMs"), elapsedMsSinceStart]}
+const unsettledMinutes = {$floor: {$divide: [unsettledMs, MS_PER_MINUTE]}}
+
+export const settledPoints = {$add: [fieldOrZero("points"), unsettledMinutes]}
+export const settledSecondsActive = {$add: [fieldOrZero("secondsActive"), {$multiply: [unsettledMinutes, SECONDS_PER_MINUTE]}]}
+const settledCarriedMs = {$mod: [unsettledMs, MS_PER_MINUTE]}
+
+const seededMaxPoints = {$ifNull: ["$maxPoints", fieldOrZero("points")]}
 const raisedMaxPoints = {$max: ["$maxPoints", "$points"]}
 
-const accrualPipeline = (disableActivity: boolean) => [
-    {$set: {accruedMinutes: accruedMinutesSinceStart, maxPoints: seededMaxPoints}},
-    {$set: {
-        points: addAccruedPoints,
-        secondsActive: addSecondsActive,
-        activeStartDate: disableActivity ? null : advanceActiveStartDate
-    }},
-    {$set: {maxPoints: raisedMaxPoints}},
-    {$unset: "accruedMinutes"}
+const trackingMaxPoints = (assignments: Record<string, unknown>) => [
+    {$set: {maxPoints: seededMaxPoints}},
+    {$set: assignments},
+    {$set: {maxPoints: raisedMaxPoints}}
 ]
+
+const accrualPipeline = (disableActivity: boolean) => trackingMaxPoints({
+    points: settledPoints,
+    secondsActive: settledSecondsActive,
+    carriedMs: settledCarriedMs,
+    activeStartDate: disableActivity ? null : settledActiveStartDate
+})
 
 const accruePoints = async (id: string, disableActivity = false): Promise<IUser> => {
     const accrued = await userModel
@@ -70,18 +77,14 @@ const toUpdatePipeline = (update: IUserUpdate) => {
 
     for (const [field, op] of Object.entries(update) as [string, IncOp | SetOp<unknown> | undefined][]) {
         if (op === undefined) continue
-        if (op.op === "inc") { assignments[field] = {$add: [{$ifNull: [`$${field}`, 0]}, op.by]}; continue }
+        if (op.op === "inc") { assignments[field] = {$add: [fieldOrZero(field), op.by]}; continue }
         if (op.op === "set") { assignments[field] = {$literal: op.to}; continue }
         throw new Error(`updateUser: "${field}" was given a raw value instead of inc() or set()`)
     }
 
     if (Object.keys(assignments).length === 0) return []
 
-    return [
-        {$set: {maxPoints: seededMaxPoints}},
-        {$set: assignments},
-        {$set: {maxPoints: raisedMaxPoints}}
-    ]
+    return trackingMaxPoints(assignments)
 }
 
 const getOrInsert = async (id: string): Promise<IUser> => {

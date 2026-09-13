@@ -11,6 +11,7 @@ import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
 import recordFile from "../util/recordFile";
+import sendPanel from "../util/sendPanel";
 dotenv.config()
 
 const COUNTDOWN_MS = 3000
@@ -101,9 +102,9 @@ const getNetLine = (net: number): string => {
 const finishFlips = async (flipMessage: Message<boolean>, results: IFlipResult[], panel: {content: string}) => {
     const scrolledOff = results.length > MAX_LINES
 
-    await flipMessage.edit({
+    await sendPanel(options => flipMessage.edit(options), {
         ...panel,
-        files: scrolledOff ? [recordFile(renderFlips(results, 0), RECORD_FILE)] : []
+        ...recordFile(scrolledOff ? renderFlips(results, 0) : undefined, RECORD_FILE)
     })
 }
 

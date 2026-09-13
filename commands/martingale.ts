@@ -11,6 +11,7 @@ import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
 import recordFile from "../util/recordFile";
+import sendPanel from "../util/sendPanel";
 dotenv.config()
 
 const MAX_WINS = 50
@@ -96,9 +97,9 @@ const getNetLine = (net: number): string => {
 const finishMartingale = async (martingaleMessage: Message<boolean>, rounds: string[][], panel: {content: string}) => {
     const scrolledOff = hasScrolledOff(rounds)
 
-    await martingaleMessage.edit({
+    await sendPanel(options => martingaleMessage.edit(options), {
         ...panel,
-        files: scrolledOff ? [recordFile(renderRounds(numberRounds(rounds)), LADDER_FILE)] : []
+        ...recordFile(scrolledOff ? renderRounds(numberRounds(rounds)) : undefined, LADDER_FILE)
     })
 }
 
