@@ -95,17 +95,38 @@ const guildWith = (...ids: string[]) => {
 
 const written: string[] = []
 
+interface IFakePayload {
+    content?: string
+    components?: unknown[]
+}
+
 const fakeContext = (authorId: string) => {
     const replies: string[] = []
     const record = (content: string) => { written.push(content) }
+    const handlers: Record<string, (i?: unknown) => unknown> = {}
+    let components: unknown[] = []
+    let accepts: (i: unknown) => boolean = () => false
+
+    const apply = (payload: IFakePayload) => {
+        if (payload.content !== undefined) record(payload.content)
+        if (payload.components !== undefined) components = payload.components
+    }
     const sent = {
-        edit: async (payload: {content: string}) => { record(payload.content); return sent },
+        edit: async (payload: IFakePayload) => { apply(payload); return sent },
         react: async () => {},
+        createMessageComponentCollector: (options: {filter: (i: unknown) => boolean}) => {
+            accepts = options.filter
+            const collector = {
+                on: (event: string, handler: (i?: unknown) => unknown) => { handlers[event] = handler; return collector },
+                stop: () => {}
+            }
+            return collector
+        },
         channel: {} as unknown
     }
     const channel = {
         type: "GUILD_TEXT",
-        send: async (payload: {content: string}) => { record(payload.content); sent.channel = channel; return sent }
+        send: async (payload: IFakePayload) => { apply(payload); sent.channel = channel; return sent }
     }
     const message = {
         author: {id: authorId, username: "tester"},
@@ -113,7 +134,28 @@ const fakeContext = (authorId: string) => {
         reply: async (payload: {content: string}) => { replies.push(payload.content); record(payload.content); return sent },
         react: async () => {}
     }
-    return {replies: replies, message: message}
+
+    const press = async (customId: string, pressedBy: string): Promise<string[]> => {
+        const seen: string[] = []
+        const interaction = {
+            customId: customId,
+            user: {id: pressedBy},
+            reply: async (payload: {content: string}) => { seen.push(payload.content); record(payload.content) },
+            followUp: async (payload: {content: string}) => { seen.push(payload.content); record(payload.content) }
+        }
+        if (accepts(interaction)) {
+            await handlers.collect?.(interaction)
+        }
+        return seen
+    }
+
+    return {
+        replies: replies,
+        message: message,
+        components: () => components,
+        press: press,
+        expire: async () => { await handlers.end?.() }
+    }
 }
 
 const seed = async (id: string, fields: Record<string, unknown> = {}) => {
@@ -221,6 +263,71 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("10 doubled five times", (await settleUser("111")).points, 320)
 }},
 
+{name: "flip: the panel shows the wager", fn: async () => {
+    rollSequence(255, 0)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    const start = written.length
+    await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
+    const panels = written.slice(start)
+
+    check("the fixed wager is displayed", panels.every(panel => panel.includes("Bet: 100")), panels[0])
+}},
+
+{name: "flip all: the panel tracks the wager as the stack grows", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 10})
+    const ctx = fakeContext("111")
+    const start = written.length
+    await flip.callback({message: ctx.message, args: ["all", "3"], guild: guildWith("111")})
+    const panels = written.slice(start)
+
+    check("opens wagering the whole stack", panels[0].includes("Bet: 10"), panels[0])
+    check("wagers the grown stack later on", panels.some(panel => panel.includes("Bet: 40")), panels[panels.length - 1])
+}},
+
+{name: "flip: every flip is its own numbered line showing the new total", fn: async () => {
+    rollSequence(255, 0)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1100"), panel)
+    check("the second flip is on the next line", panel.includes("2) ❌ 1000"), panel)
+    check("the fourth flip keeps counting", panel.includes("4) ❌ 1000"), panel)
+    check("no button while the panel shows everything", ctx.components().length === 0,
+        JSON.stringify(ctx.components()))
+}},
+
+{name: "flip all: the running total doubles down the lines", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 10})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["all", "5"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    check("the first flip doubles the stack", panel.includes("1) ✅ 20"), panel)
+    check("the last flip has doubled five times", panel.includes("5) ✅ 320"), panel)
+}},
+
+{name: "flip: the full record button opens what scrolled off", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["100", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    check("a button once flips have scrolled off", ctx.components().length === 1,
+        JSON.stringify(ctx.components()))
+    check("the panel keeps the newest flip", panel.includes("12) ✅ 2200"), panel)
+    check("the oldest flips have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
+
+    const full = (await ctx.press("fullFlips", "222")).join("\n")
+    check("the scrolled off flips are in the full record", full.includes(" 1) ✅ 1100"), full)
+    check("the newest flip is in it too", full.includes("12) ✅ 2200"), full)
+}},
+
 {name: "martingale: a win recovers the whole losing ladder", fn: async () => {
     rollSequence(0, 0, 255)
     await seed("111", {points: 1000})
@@ -263,6 +370,93 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("never refused for being under the minimum",
         !ctx.replies.some(reply => reply.includes("at least")), ctx.replies[0])
     eq("the ladder ran", (await settleUser("111")).flipsWon, 1)
+}},
+
+{name: "martingale: each ladder line is numbered", fn: async () => {
+    rollSequence(0, 255, 255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    const start = written.length
+    await martingale.callback({message: ctx.message, args: ["10", "2"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    check("wrote a panel", written.length > start, `${written.length} vs ${start}`)
+    check("the first ladder is numbered", panel.includes("1) ❌ 10  ✅ 20"), panel)
+    check("the second ladder is numbered", panel.includes("2) ✅ 10"), panel)
+}},
+
+// Rounds keep their true number once older lines scroll off the panel, so the numbering
+// tracks how many ladders have actually been played rather than restarting at 1.
+{name: "martingale: numbering survives lines scrolling off", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    check("the newest ladder keeps its true number", panel.includes("12) "), panel)
+    check("the oldest shown ladder is the third, right-aligned", panel.includes(" 3) "), panel)
+    check("the first two ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
+}},
+
+{name: "martingale: the full ladder button only shows up once lines scroll off", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const short = fakeContext("111")
+    await martingale.callback({message: short.message, args: ["10", "5"], guild: guildWith("111")})
+    check("no button when the panel already shows everything", short.components().length === 0,
+        JSON.stringify(short.components()))
+
+    await seed("111", {points: 1000})
+    const long = fakeContext("111")
+    await martingale.callback({message: long.message, args: ["10", "12"], guild: guildWith("111")})
+    check("a button once ladders have scrolled off", long.components().length === 1,
+        JSON.stringify(long.components()))
+}},
+
+{name: "martingale: the button answers privately with every ladder", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    const pages = await ctx.press("fullMartingale", "222")
+    const full = pages.join("\n")
+
+    check("anyone watching can open it", pages.length > 0, `${pages.length} pages`)
+    check("the scrolled off ladders are in it", full.includes(" 1) ") && full.includes(" 2) "), full)
+    check("the newest ladder is in it too", full.includes("12) "), full)
+    check("the public panel still hides them", !panel.includes(" 1) "), panel)
+}},
+
+{name: "martingale: a ladder too long for one message is paged", fn: async () => {
+    rollSequence(0, 0, 0, 0, 255)
+    await seed("111", {points: 100000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["1000", "50"], guild: guildWith("111")})
+
+    const pages = await ctx.press("fullMartingale", "111")
+    const longest = Math.max(...pages.map(page => page.length))
+
+    check("split across pages", pages.length > 1, `${pages.length} pages`)
+    check("every page fits the limit", longest <= DISCORD_MESSAGE_LIMIT, `longest was ${longest}`)
+    check("the pages are numbered", pages[0].includes(`(1 of ${pages.length})`), pages[0].split("\n")[0])
+    check("the first ladder opens the first page", pages[0].includes(" 1) "), pages[0].split("\n")[2])
+    check("the last ladder closes the last page", pages[pages.length - 1].includes("50) "),
+        pages[pages.length - 1])
+}},
+
+{name: "martingale: the button is withdrawn when it expires", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
+    check("the button is up", ctx.components().length === 1, JSON.stringify(ctx.components()))
+
+    await ctx.expire()
+    check("the button is gone once it times out", ctx.components().length === 0,
+        JSON.stringify(ctx.components()))
 }},
 
 {name: "give: points leave one side and arrive on the other", fn: async () => {
@@ -406,6 +600,58 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the type list mentions no bets", !/Bets|BetPoints|PointsBet/.test(listing.replies[0]), listing.replies[0])
 }},
 
+{name: "top points: unsettled voice time counts toward the ranking", fn: async () => {
+    await seed("111", {points: 1000, activeStartDate: new Date(Date.now() - 50 * MINUTE)})
+    await seed("222", {points: 1020, activeStartDate: null})
+    const ctx = fakeContext("111")
+    await top.callback({message: ctx.message, args: ["points"], guild: guildWith("111", "222")})
+
+    const board = ctx.replies[0] ?? ""
+    check("111 ranks first on 1050 settled, not 1000 stored", board.indexOf("user111") < board.indexOf("user222"), board)
+    check("the settled total is displayed", board.includes("1050"), board)
+}},
+
+{name: "top active: unsettled voice time counts toward the ranking", fn: async () => {
+    await seed("111", {secondsActive: 0, activeStartDate: new Date(Date.now() - 120 * MINUTE)})
+    await seed("222", {secondsActive: 3600, activeStartDate: null})
+    const ctx = fakeContext("111")
+    await top.callback({message: ctx.message, args: ["active"], guild: guildWith("111", "222")})
+
+    const board = ctx.replies[0] ?? ""
+    check("111 ranks first on 2h unsettled against a stored 1h", board.indexOf("user111") < board.indexOf("user222"), board)
+    check("the settled time is displayed", board.includes("0d / 2h / 0m"), board)
+}},
+
+{name: "top: the settled ranking is not written back to the database", fn: async () => {
+    const start = new Date(Date.now() - 50 * MINUTE)
+    await seed("111", {points: 1000, secondsActive: 0, activeStartDate: start})
+    const ctx = fakeContext("111")
+    await top.callback({message: ctx.message, args: ["points"], guild: guildWith("111")})
+
+    const raw = await userModel.collection.findOne({id: "111"})
+    eq("points not materialised", raw?.points, 1000)
+    eq("secondsActive not materialised", raw?.secondsActive, 0)
+    eq("activeStartDate not advanced", raw?.activeStartDate?.getTime(), start.getTime())
+}},
+
+// Debt is (minutes earned + 100 + claimed) - points. An unsettled voice minute raises
+// the earned side and the points side by exactly one each, so it cancels out. 111 below
+// is the unsettled twin of 222; both must land on the same number.
+{name: "top debt: unsettled voice time cancels out of the debt formula", fn: async () => {
+    await seed("111", {points: 1000, secondsActive: 0, activeStartDate: new Date(Date.now() - 50 * MINUTE)})
+    await seed("222", {points: 1050, secondsActive: 3000, activeStartDate: null})
+
+    const most = fakeContext("111")
+    await top.callback({message: most.message, args: ["mostdebt"], guild: guildWith("111", "222")})
+    const mostBoard = most.replies[0] ?? ""
+    eq("both twins show the same most-debt value", (mostBoard.match(/-900/g) ?? []).length, 2)
+
+    const least = fakeContext("111")
+    await top.callback({message: least.message, args: ["leastdebt"], guild: guildWith("111", "222")})
+    const leastBoard = least.replies[0] ?? ""
+    eq("both twins show the same least-debt value", (leastBoard.match(/-900/g) ?? []).length, 2)
+}},
+
 {name: "top: a member who left the server is named, not dropped", fn: async () => {
     await seed("111", {points: 900})
     await seed("222", {points: 500})
@@ -424,6 +670,17 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     for (const claim of ["daily", "weekly", "monthly", "yearly"]) {
         check(`mentions ${claim}`, ctx.replies[0].includes(claim), ctx.replies[0])
     }
+}},
+
+{name: "help: the limits the gambling commands enforce are advertised", fn: async () => {
+    const ctx = fakeContext("111")
+    await help.callback({message: ctx.message, args: [], guild: guildWith("111")})
+
+    check("names the flip cap", ctx.replies[0].includes("max 50"), ctx.replies[0])
+    check("names the multi-flip minimum", ctx.replies[0].includes("2%+"), ctx.replies[0])
+    check("names the martingale minimum", ctx.replies[0].includes("1%+"), ctx.replies[0])
+    eq("a cap is advertised for both flip and martin",
+        (ctx.replies[0].match(/max 50/g) ?? []).length, 2)
 }},
 
 {name: "no command wrote a message Discord would reject", fn: async () => {

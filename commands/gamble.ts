@@ -10,12 +10,14 @@ import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
+import { historyButton, toPages, watchFullHistory } from "../util/fullHistory";
 dotenv.config()
 
 const COUNTDOWN_MS = 3000
 const MAX_FLIPS = 50
 const MIN_MULTI_BET_PCT = 0.02
-const FLIPS_PER_ROW = 10
+const MAX_LINES = 10
+const FULL_RECORD_ID = 'fullFlips'
 const WIN = '✅'
 const LOSS = '❌'
 
@@ -24,7 +26,7 @@ const flip = textCommand({
     aliases: ['f','filp','fipl','lipf','pilf','fpil', 'phillip', 'fip', 'ipfl', 'iflp'],
     category: 'gambling',
     description: 'lose some points',
-    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all" or "some"> <Optional # of times to flip or "some">',
+    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all" or "some"> <Optional # of times to flip (max 50) or "some">',
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',
@@ -52,15 +54,20 @@ const flip = textCommand({
 
 export default flip
 
-const getMessageContent =(user: IUser, results: string[], maxFlips: number, net: number, final = ''): any => {
-    const wins = results.filter(result => result === WIN).length
+interface IFlipResult {
+    won: boolean
+    points: number
+}
+
+const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number, net: number, bet: number, final = ''): any => {
+    const wins = results.filter(result => result.won).length
     const losses = results.length - wins
 
     const build = (body: string) =>
 `**<@${user.id}>'s Flips**
 \`\`\`ansi
 Points: ${user.points}     Net: ${formatNet(net)}     Flip: ${results.length} of ${maxFlips}
-W: ${wins}     L: ${losses}
+Bet: ${bet}     W: ${wins}     L: ${losses}
 
 ${body}
 \`\`\`
@@ -69,13 +76,23 @@ ${final}`
     return {content: fitToMessageLimit(build, formatRecord(results))}
 }
 
-const formatRecord = (results: string[]): string => {
-    const rows: string[] = []
-    for (let i = 0; i < results.length; i += FLIPS_PER_ROW) {
-        rows.push(results.slice(i, i + FLIPS_PER_ROW).join(' '))
-    }
-    return rows.join('\n')
+const renderFlips = (results: IFlipResult[], from: number): string => {
+    const width = String(from + results.length).length
+    return results
+        .map((result, index) =>
+            `${String(from + index + 1).padStart(width)}) ${result.won ? WIN : LOSS} ${result.points}`)
+        .join('\n')
 }
+
+const formatRecord = (results: IFlipResult[]): string =>
+    renderFlips(results.slice(-MAX_LINES), Math.max(0, results.length - MAX_LINES))
+
+const getRecordPages = (user: IUser, results: IFlipResult[]): string[] =>
+    toPages((body, label) =>
+`**<@${user.id}>'s full Flips**${label}
+\`\`\`ansi
+${body}
+\`\`\``, renderFlips(results, 0).split('\n'))
 
 const getNetLine = (net: number): string => {
     if (net > 0) {
@@ -87,12 +104,26 @@ const getNetLine = (net: number): string => {
     return `${process.env.SHRUGGERS_EMOJI}`
 }
 
+const finishFlips = async (flipMessage: Message<boolean>, user: IUser, results: IFlipResult[], panel: {content: string}) => {
+    const scrolledOff = results.length > MAX_LINES
+
+    await flipMessage.edit({
+        ...panel,
+        components: scrolledOff ? historyButton(FULL_RECORD_ID, 'Full record') : []
+    })
+
+    if (scrolledOff) {
+        watchFullHistory(flipMessage, FULL_RECORD_ID, () => getRecordPages(user, results))
+    }
+}
+
 const flipMultiple = async (guild: Guild, user: IUser, points: number, message: Message<boolean>, maxFlips: number, flipAll: boolean) => {
     const startingPoints = user.points
-    const results: string[] = []
+    const results: IFlipResult[] = []
 
     let deadline = Date.now() + COUNTDOWN_MS
-    const flipMessage = await message.channel.send(getMessageContent(user, results, maxFlips, 0, `Flipping ${countdownTo(deadline)}`))
+    const flipMessage = await message.channel.send(
+        getMessageContent(user, results, maxFlips, 0, flipAll ? user.points : points, `Flipping ${countdownTo(deadline)}`))
 
     for (;;) {
         await sleep(Math.max(0, deadline - Date.now()))
@@ -101,32 +132,32 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
         const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
         if (won) {
             user = await updateUserWin(user, wager)
-            results.push(WIN)
         } else {
             user = await updateUserLoss(user, wager)
-            results.push(LOSS)
         }
+        results.push({won: won, points: user.points})
 
         const net = user.points - startingPoints
         const flipsLeft = maxFlips - results.length
         const broke = flipAll ? !won : flipsLeft > 0 && user.points < points
 
         if (broke) {
-            await flipMessage.edit(getMessageContent(user, results, maxFlips, net,
+            await finishFlips(flipMessage, user, results, getMessageContent(user, results, maxFlips, net, wager,
                 flipAll ? `Sit` : `You ain't got ${points}. Sit`))
             await checkAndAssignDusted(guild, user, wager)
             return
         }
 
         if (flipsLeft === 0) {
-            await flipMessage.edit(getMessageContent(user, results, maxFlips, net,
+            await finishFlips(flipMessage, user, results, getMessageContent(user, results, maxFlips, net, wager,
                 flipAll ? `You made it through ${process.env.PEEPO_COMFY_EMOJI}` : `${maxFlips} flips, ${getNetLine(net)}`))
             await checkAndAssignDusted(guild, user, wager)
             return
         }
 
         deadline = Date.now() + COUNTDOWN_MS
-        await flipMessage.edit(getMessageContent(user, results, maxFlips, net, `Flipping ${countdownTo(deadline)}`))
+        await flipMessage.edit(getMessageContent(user, results, maxFlips, net,
+            flipAll ? user.points : points, `Flipping ${countdownTo(deadline)}`))
     }
 }
 
