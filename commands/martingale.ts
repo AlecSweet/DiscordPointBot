@@ -25,7 +25,7 @@ const martingale = textCommand({
     aliases: ['shkreli', 'm', 'tarmin', 'martingale'],
     category: 'gambling',
     description: 'martingale shit',
-    expectedArgs: '<# of points to start on (min 1% of your points), "all" or "some"> <# of times to win (max 50) or "some">',
+    expectedArgs: '<# of points to start on (min 1% of your points), "all", "some" or "min"> <# of times to win (max 50) or "some">',
     minArgs: 2,
     maxArgs: 2,
     cooldown: '3s',

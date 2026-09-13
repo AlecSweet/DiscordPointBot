@@ -303,6 +303,17 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("the 5 point flip was allowed and won", (await settleUser("111")).points, 1005)
 }},
 
+{name: "flip: \"min\" wagers exactly the multi-flip minimum", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["min", "2"], guild: guildWith("111")})
+
+    check("never refused for being under the minimum",
+        !ctx.replies.some(reply => reply.includes("at least")), ctx.replies[0])
+    eq("2% of 1000 won twice", (await settleUser("111")).points, 1040)
+}},
+
 {name: "flip all: wagering everything always clears the minimum", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 10})
@@ -798,6 +809,17 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("names the martingale minimum", commands.includes("1%+"), commands)
     eq("a cap is advertised for both flip and martin",
         (commands.match(/max 50/g) ?? []).length, 2)
+}},
+
+{name: "help: every wager keyword is advertised by every command that takes one", fn: async () => {
+    const commands = await pressHelp(fakeContext("111"))
+
+    for (const name of ["!give", "!flip", "!martin", "!challenge", "!rps"]) {
+        const line = commands.split("\n").find(l => l.includes(name)) ?? ""
+        for (const keyword of ["all", "some", "min"]) {
+            check(`${name} advertises ${keyword}`, line.includes(keyword), line)
+        }
+    }
 }},
 
 {name: "help: every command the bot answers to is advertised", fn: async () => {

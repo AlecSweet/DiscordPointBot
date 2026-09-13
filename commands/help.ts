@@ -6,15 +6,15 @@ const commandList =
 \`\`\`
 Balance
   !points      [@user]
-  !give        <@user> <amount | all | some>
+  !give        <@user> <amount | all | some | min>
   !claim       <daily | weekly | monthly | yearly>
   !daily   !weekly   !monthly   !yearly
 
 Gambling
-  !flip        <amount | all | some> [flips: max 50, bet 2%+ | some]
-  !martin      <amount: 1%+ | all | some> <wins: max 50 | some>
-  !challenge   <amount | all | some> [@user]
-  !rps         <amount | all | some> [@user]
+  !flip        <amount | all | some | min> [flips: max 50, bet 2%+ | some]
+  !martin      <amount: 1%+ | all | some | min> <wins: max 50 | some>
+  !challenge   <amount | all | some | min> [@user]
+  !rps         <amount | all | some | min> [@user]
   !war         [@user]
 
 Records

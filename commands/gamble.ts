@@ -27,7 +27,7 @@ const flip = textCommand({
     aliases: ['f','filp','fipl','lipf','pilf','fpil', 'phillip', 'fip', 'ipfl', 'iflp'],
     category: 'gambling',
     description: 'lose some points',
-    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all" or "some"> <Optional # of times to flip (max 50) or "some">',
+    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all", "some" or "min"> <Optional # of times to flip (max 50) or "some">',
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',

@@ -453,6 +453,30 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("no reply sent", msg.replies.length, 0)
 }},
 
+{name: "parsePoints: \"min\" resolves to the minimum the command enforces", fn: async () => {
+    await seed("min5", {points: 1000})
+    const user = await settleUser("min5")
+    const msg = fakeMessage()
+    eq("min parses to the 200 minimum", await parsePoints("MiN", user, msg.message, "bet", 200), 200)
+    eq("no reply sent", msg.replies.length, 0)
+}},
+
+{name: "parsePoints: \"min\" with no minimum is a single point", fn: async () => {
+    await seed("min6", {points: 1000})
+    const user = await settleUser("min6")
+    const msg = fakeMessage()
+    eq("min parses to 1", await parsePoints("min", user, msg.message, "gift"), 1)
+    eq("no reply sent", msg.replies.length, 0)
+}},
+
+{name: "parsePoints: \"min\" is refused when the stack cannot cover it", fn: async () => {
+    await seed("min7", {points: 150})
+    const user = await settleUser("min7")
+    const msg = fakeMessage()
+    eq("rejected", await parsePoints("min", user, msg.message, "bet", 200), undefined)
+    check("told how much they have", msg.replies[0]?.includes("You only got 150 points"), msg.replies[0])
+}},
+
 {name: "parseCount: a plain number within the cap is taken as written", fn: async () => {
     const msg = fakeMessage()
     eq("10 parses to 10", await parseCount("10", 25, msg.message, "number of flips"), 10)
