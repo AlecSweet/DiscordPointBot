@@ -6,6 +6,8 @@ import { addUserMutex } from "../util/userMutexes"
 
 const MINUTE = 60000
 const DISCORD_MESSAGE_LIMIT = 2000
+const TOP_CAP = 500
+const BIG_BOARD = 150
 const WEALTHIEST_ROLE_ID = "wealthiest"
 
 // Emoji and role ids are Heroku config vars. Unset, every one of them interpolates as
@@ -52,6 +54,8 @@ const martingale = require("../commands/martingale").default
 const give = require("../commands/give").default
 const top = require("../commands/leaderboard").default
 const help = require("../commands/help").default
+const stats = require("../commands/stats").default
+const serverStats = require("../commands/serverStats").default
 const assignMostPointsRole = require("../events/assignMostPointsRole").default
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -95,34 +99,55 @@ const guildWith = (...ids: string[]) => {
 
 const written: string[] = []
 
+interface IFakeFile {
+    name: string | null
+    attachment: Buffer
+}
+
 interface IFakePayload {
     content?: string
+    files?: IFakeFile[]
     components?: unknown[]
 }
 
+interface IFakeInteractionPayload {
+    content: string
+    ephemeral?: boolean
+}
+
+interface IFakeInteraction {
+    user: {id: string}
+    customId: string
+    deferReply: (options: {ephemeral?: boolean}) => Promise<void>
+    editReply: (payload: IFakePayload) => Promise<void>
+}
+
+type IFakeCollectorHandler = (interaction?: IFakeInteraction) => Promise<void>
+
 const fakeContext = (authorId: string) => {
     const replies: string[] = []
+    const privateReplies: IFakeInteractionPayload[] = []
+    const edits: IFakePayload[] = []
     const record = (content: string) => { written.push(content) }
-    const handlers: Record<string, (i?: unknown) => unknown> = {}
-    let components: unknown[] = []
-    let accepts: (i: unknown) => boolean = () => false
+    let files: IFakeFile[] = []
+    let collect: IFakeCollectorHandler | undefined
+    let end: IFakeCollectorHandler | undefined
 
     const apply = (payload: IFakePayload) => {
         if (payload.content !== undefined) record(payload.content)
-        if (payload.components !== undefined) components = payload.components
+        if (payload.files !== undefined) files = payload.files
     }
     const sent = {
-        edit: async (payload: IFakePayload) => { apply(payload); return sent },
+        edit: async (payload: IFakePayload) => { edits.push(payload); apply(payload); return sent },
         react: async () => {},
-        createMessageComponentCollector: (options: {filter: (i: unknown) => boolean}) => {
-            accepts = options.filter
-            const collector = {
-                on: (event: string, handler: (i?: unknown) => unknown) => { handlers[event] = handler; return collector },
-                stop: () => {}
-            }
-            return collector
-        },
-        channel: {} as unknown
+        channel: {} as unknown,
+        createMessageComponentCollector: () => ({
+            on: (event: string, handler: IFakeCollectorHandler) => {
+                if (event === "collect") collect = handler
+                if (event === "end") end = handler
+            },
+            stop: () => {}
+        })
     }
     const channel = {
         type: "GUILD_TEXT",
@@ -135,27 +160,51 @@ const fakeContext = (authorId: string) => {
         react: async () => {}
     }
 
-    const press = async (customId: string, pressedBy: string): Promise<string[]> => {
-        const seen: string[] = []
-        const interaction = {
-            customId: customId,
-            user: {id: pressedBy},
-            reply: async (payload: {content: string}) => { seen.push(payload.content); record(payload.content) },
-            followUp: async (payload: {content: string}) => { seen.push(payload.content); record(payload.content) }
-        }
-        if (accepts(interaction)) {
-            await handlers.collect?.(interaction)
-        }
-        return seen
-    }
-
     return {
         replies: replies,
+        privateReplies: privateReplies,
+        edits: edits,
         message: message,
-        components: () => components,
-        press: press,
-        expire: async () => { await handlers.end?.() }
+        files: () => files,
+        attached: () => files.map(file => file.attachment.toString()).join("\n"),
+        press: async (userId: string) => {
+            if (!collect) throw new Error("nothing to press")
+            let ephemeral = false
+            await collect({
+                user: {id: userId},
+                customId: "show",
+                deferReply: async (options: {ephemeral?: boolean}) => { ephemeral = options.ephemeral === true },
+                editReply: async (payload: IFakePayload) => {
+                    privateReplies.push({content: payload.content ?? "", ephemeral: ephemeral})
+                    apply(payload)
+                }
+            })
+        },
+        hasButton: () => collect !== undefined,
+        expire: async () => {
+            if (!end) throw new Error("nothing to expire")
+            await end()
+        }
     }
+}
+
+const numberedLines = (panel: string): number =>
+    panel.split("\n").filter(line => /^ *[0-9]+\) /.test(line)).length
+
+const pressButton = async (ctx: ReturnType<typeof fakeContext>, userId = "111"): Promise<string> => {
+    await ctx.press(userId)
+    return ctx.privateReplies[ctx.privateReplies.length - 1]?.content ?? ""
+}
+
+const pressHelp = async (ctx: ReturnType<typeof fakeContext>, userId = "111"): Promise<string> => {
+    await help.callback({message: ctx.message, args: [], guild: guildWith("111")})
+    return await pressButton(ctx, userId)
+}
+
+const pressTop = async (args: string[], guild: ReturnType<typeof guildWith>): Promise<string> => {
+    const ctx = fakeContext("111")
+    await top.callback({message: ctx.message, args: args, guild: guild})
+    return ctx.hasButton() ? await pressButton(ctx) : (ctx.replies[0] ?? "")
 }
 
 const seed = async (id: string, fields: Record<string, unknown> = {}) => {
@@ -296,8 +345,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1100"), panel)
     check("the second flip is on the next line", panel.includes("2) ❌ 1000"), panel)
     check("the fourth flip keeps counting", panel.includes("4) ❌ 1000"), panel)
-    check("no button while the panel shows everything", ctx.components().length === 0,
-        JSON.stringify(ctx.components()))
+    eq("no file while the panel shows everything", ctx.files().length, 0)
 }},
 
 {name: "flip all: the running total doubles down the lines", fn: async () => {
@@ -311,21 +359,54 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the last flip has doubled five times", panel.includes("5) ✅ 320"), panel)
 }},
 
-{name: "flip: the full record button opens what scrolled off", fn: async () => {
+{name: "flip: five lines show while it is going, ten once it is done", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    const start = written.length
+    await flip.callback({message: ctx.message, args: ["100", "12"], guild: guildWith("111")})
+    const panels = written.slice(start)
+
+    const running = panels[panels.length - 2]
+    const finished = panels[panels.length - 1]
+    eq("five lines on the last running panel", numberedLines(running), 5)
+    check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
+    check("the sixth flip has already scrolled off", !running.includes(" 6) "), running)
+    eq("ten lines once it is done", numberedLines(finished), 10)
+}},
+
+{name: "martingale: five lines show while it is going, ten once it is done", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    const start = written.length
+    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
+    const panels = written.slice(start)
+
+    const running = panels[panels.length - 2]
+    const finished = panels[panels.length - 1]
+    eq("five ladders on the last running panel", numberedLines(running), 5)
+    check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
+    check("the sixth ladder has already scrolled off", !running.includes(" 6) "), running)
+    eq("ten ladders once it is done", numberedLines(finished), 10)
+}},
+
+{name: "flip: the full record is attached as a file once flips scroll off", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
     await flip.callback({message: ctx.message, args: ["100", "12"], guild: guildWith("111")})
     const panel = written[written.length - 1]
 
-    check("a button once flips have scrolled off", ctx.components().length === 1,
-        JSON.stringify(ctx.components()))
+    eq("one file once flips have scrolled off", ctx.files().length, 1)
+    eq("named for the command", ctx.files()[0].name, "flips.txt")
     check("the panel keeps the newest flip", panel.includes("12) ✅ 2200"), panel)
     check("the oldest flips have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
 
-    const full = (await ctx.press("fullFlips", "222")).join("\n")
-    check("the scrolled off flips are in the full record", full.includes(" 1) ✅ 1100"), full)
+    const full = ctx.attached()
+    check("the scrolled off flips are in the file", full.includes(" 1) ✅ 1100"), full)
     check("the newest flip is in it too", full.includes("12) ✅ 2200"), full)
+    check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
 }},
 
 {name: "martingale: a win recovers the whole losing ladder", fn: async () => {
@@ -399,64 +480,45 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the first two ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
 }},
 
-{name: "martingale: the full ladder button only shows up once lines scroll off", fn: async () => {
+{name: "martingale: the ladder file only shows up once lines scroll off", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const short = fakeContext("111")
     await martingale.callback({message: short.message, args: ["10", "5"], guild: guildWith("111")})
-    check("no button when the panel already shows everything", short.components().length === 0,
-        JSON.stringify(short.components()))
+    eq("no file when the panel already shows everything", short.files().length, 0)
 
     await seed("111", {points: 1000})
     const long = fakeContext("111")
     await martingale.callback({message: long.message, args: ["10", "12"], guild: guildWith("111")})
-    check("a button once ladders have scrolled off", long.components().length === 1,
-        JSON.stringify(long.components()))
+    eq("a file once ladders have scrolled off", long.files().length, 1)
+    eq("named for the command", long.files()[0].name, "martingale.txt")
 }},
 
-{name: "martingale: the button answers privately with every ladder", fn: async () => {
+{name: "martingale: the attached ladder holds every round", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
     await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
     const panel = written[written.length - 1]
+    const full = ctx.attached()
 
-    const pages = await ctx.press("fullMartingale", "222")
-    const full = pages.join("\n")
-
-    check("anyone watching can open it", pages.length > 0, `${pages.length} pages`)
     check("the scrolled off ladders are in it", full.includes(" 1) ") && full.includes(" 2) "), full)
     check("the newest ladder is in it too", full.includes("12) "), full)
+    check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
     check("the public panel still hides them", !panel.includes(" 1) "), panel)
 }},
 
-{name: "martingale: a ladder too long for one message is paged", fn: async () => {
+{name: "martingale: a ladder too long for one message still fits one file", fn: async () => {
     rollSequence(0, 0, 0, 0, 255)
     await seed("111", {points: 100000})
     const ctx = fakeContext("111")
     await martingale.callback({message: ctx.message, args: ["1000", "50"], guild: guildWith("111")})
+    const full = ctx.attached()
 
-    const pages = await ctx.press("fullMartingale", "111")
-    const longest = Math.max(...pages.map(page => page.length))
-
-    check("split across pages", pages.length > 1, `${pages.length} pages`)
-    check("every page fits the limit", longest <= DISCORD_MESSAGE_LIMIT, `longest was ${longest}`)
-    check("the pages are numbered", pages[0].includes(`(1 of ${pages.length})`), pages[0].split("\n")[0])
-    check("the first ladder opens the first page", pages[0].includes(" 1) "), pages[0].split("\n")[2])
-    check("the last ladder closes the last page", pages[pages.length - 1].includes("50) "),
-        pages[pages.length - 1])
-}},
-
-{name: "martingale: the button is withdrawn when it expires", fn: async () => {
-    rollSequence(255)
-    await seed("111", {points: 1000})
-    const ctx = fakeContext("111")
-    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
-    check("the button is up", ctx.components().length === 1, JSON.stringify(ctx.components()))
-
-    await ctx.expire()
-    check("the button is gone once it times out", ctx.components().length === 0,
-        JSON.stringify(ctx.components()))
+    eq("one file, no paging", ctx.files().length, 1)
+    check("longer than a message could ever carry", full.length > DISCORD_MESSAGE_LIMIT, `${full.length}`)
+    check("the first ladder is in it", full.includes(" 1) "), full.split("\n")[0])
+    check("the last ladder is in it", full.includes("50) "), full.split("\n").slice(-1)[0])
 }},
 
 {name: "give: points leave one side and arrive on the other", fn: async () => {
@@ -566,16 +628,13 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         rpsWon: 1, rpsLost: 1, rpsPointsWon: 7, rpsPointsLost: 8})
     const guild = guildWith("111")
 
-    const listing = fakeContext("111")
-    await top.callback({message: listing.message, args: [], guild: guild})
-    const advertised = listing.replies[0].split("Leadboard Types:")[1].split("```")[0].split(/\s+/).filter(Boolean)
+    const listing = await pressTop([], guild)
+    const advertised = listing.split("Leadboard Types:")[1].split("```")[0].split(/\s+/).filter(Boolean)
 
     const untypeable: string[] = []
     const blank: string[] = []
     for (const name of advertised) {
-        const ctx = fakeContext("111")
-        await top.callback({message: ctx.message, args: [name.toLowerCase()], guild: guild})
-        const body = ctx.replies[0] ?? ""
+        const body = await pressTop([name.toLowerCase()], guild)
         if (body.includes("Leadboard Types:")) untypeable.push(name)
         else if (body.includes("undefined")) blank.push(name)
     }
@@ -590,34 +649,46 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const guild = guildWith("111")
 
     for (const retired of ["betswon", "betslost", "bets", "betsopened", "betpointswon", "betpointslost", "pointsbet"]) {
-        const ctx = fakeContext("111")
-        await top.callback({message: ctx.message, args: [retired], guild: guild})
-        check(`${retired} is not a leaderboard`, (ctx.replies[0] ?? "").includes("Leadboard Types:"), ctx.replies[0])
+        const body = await pressTop([retired], guild)
+        check(`${retired} is not a leaderboard`, body.includes("Leadboard Types:"), body)
     }
 
-    const listing = fakeContext("111")
-    await top.callback({message: listing.message, args: [], guild: guild})
-    check("the type list mentions no bets", !/Bets|BetPoints|PointsBet/.test(listing.replies[0]), listing.replies[0])
+    const listing = await pressTop([], guild)
+    check("the type list mentions no bets", !/Bets|BetPoints|PointsBet/.test(listing), listing)
 }},
 
 {name: "top points: unsettled voice time counts toward the ranking", fn: async () => {
     await seed("111", {points: 1000, activeStartDate: new Date(Date.now() - 50 * MINUTE)})
     await seed("222", {points: 1020, activeStartDate: null})
-    const ctx = fakeContext("111")
-    await top.callback({message: ctx.message, args: ["points"], guild: guildWith("111", "222")})
 
-    const board = ctx.replies[0] ?? ""
+    const board = await pressTop(["points"], guildWith("111", "222"))
     check("111 ranks first on 1050 settled, not 1000 stored", board.indexOf("user111") < board.indexOf("user222"), board)
     check("the settled total is displayed", board.includes("1050"), board)
+}},
+
+{name: "top peak: a spent down high still outranks a bigger current balance", fn: async () => {
+    await seed("111", {points: 10, maxPoints: 5000, activeStartDate: null})
+    await seed("222", {points: 4000, maxPoints: 4000, activeStartDate: null})
+
+    const board = await pressTop(["peak"], guildWith("111", "222"))
+    check("111 ranks first on a 5000 peak while holding 10", board.indexOf("user111") < board.indexOf("user222"), board)
+    check("the peak is displayed", board.includes("5000"), board)
+}},
+
+{name: "top peak: unsettled voice time counts toward the peak", fn: async () => {
+    await seed("111", {points: 1000, maxPoints: 1000, activeStartDate: new Date(Date.now() - 50 * MINUTE)})
+    await seed("222", {points: 1020, maxPoints: 1020, activeStartDate: null})
+
+    const board = await pressTop(["peak"], guildWith("111", "222"))
+    check("111 ranks first on a 1050 settled peak", board.indexOf("user111") < board.indexOf("user222"), board)
+    check("the settled peak is displayed", board.includes("1050"), board)
 }},
 
 {name: "top active: unsettled voice time counts toward the ranking", fn: async () => {
     await seed("111", {secondsActive: 0, activeStartDate: new Date(Date.now() - 120 * MINUTE)})
     await seed("222", {secondsActive: 3600, activeStartDate: null})
-    const ctx = fakeContext("111")
-    await top.callback({message: ctx.message, args: ["active"], guild: guildWith("111", "222")})
 
-    const board = ctx.replies[0] ?? ""
+    const board = await pressTop(["active"], guildWith("111", "222"))
     check("111 ranks first on 2h unsettled against a stored 1h", board.indexOf("user111") < board.indexOf("user222"), board)
     check("the settled time is displayed", board.includes("0d / 2h / 0m"), board)
 }},
@@ -625,8 +696,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "top: the settled ranking is not written back to the database", fn: async () => {
     const start = new Date(Date.now() - 50 * MINUTE)
     await seed("111", {points: 1000, secondsActive: 0, activeStartDate: start})
-    const ctx = fakeContext("111")
-    await top.callback({message: ctx.message, args: ["points"], guild: guildWith("111")})
+    await pressTop(["points"], guildWith("111"))
 
     const raw = await userModel.collection.findOne({id: "111"})
     eq("points not materialised", raw?.points, 1000)
@@ -641,46 +711,159 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await seed("111", {points: 1000, secondsActive: 0, activeStartDate: new Date(Date.now() - 50 * MINUTE)})
     await seed("222", {points: 1050, secondsActive: 3000, activeStartDate: null})
 
-    const most = fakeContext("111")
-    await top.callback({message: most.message, args: ["mostdebt"], guild: guildWith("111", "222")})
-    const mostBoard = most.replies[0] ?? ""
+    const mostBoard = await pressTop(["mostdebt"], guildWith("111", "222"))
     eq("both twins show the same most-debt value", (mostBoard.match(/-900/g) ?? []).length, 2)
 
-    const least = fakeContext("111")
-    await top.callback({message: least.message, args: ["leastdebt"], guild: guildWith("111", "222")})
-    const leastBoard = least.replies[0] ?? ""
+    const leastBoard = await pressTop(["leastdebt"], guildWith("111", "222"))
     eq("both twins show the same least-debt value", (leastBoard.match(/-900/g) ?? []).length, 2)
 }},
 
 {name: "top: a member who left the server is named, not dropped", fn: async () => {
     await seed("111", {points: 900})
     await seed("222", {points: 500})
-    const ctx = fakeContext("111")
-    await top.callback({message: ctx.message, args: ["points"], guild: guildWith("111")})
 
-    const board = ctx.replies[0] ?? ""
+    const board = await pressTop(["points"], guildWith("111"))
     check("the departed member shows as Deleted User", board.includes("Deleted User"), board)
     check("the remaining member keeps their display name", board.includes("user111"), board)
 }},
 
-{name: "help: every claim the bot accepts is advertised", fn: async () => {
+{name: "top: the board stays out of the channel until someone presses", fn: async () => {
+    await seed("111", {points: 900})
     const ctx = fakeContext("111")
-    await help.callback({message: ctx.message, args: [], guild: guildWith("111")})
+    await top.callback({message: ctx.message, args: ["points", "3"], guild: guildWith("111")})
+
+    check("the channel only gets the button message", !ctx.replies.join("").includes("user111"),
+        ctx.replies.join(""))
+    check("the button message names the board", ctx.replies[0].includes("Points Top"), ctx.replies[0])
+
+    const board = await pressButton(ctx, "222")
+    check("a bystander pressing gets the board", board.includes("user111"), board)
+    check("the header counts the rows it shows", board.startsWith(`**Points Top ${numberedLines(board)}**`),
+        board.split("\n")[0])
+    check("privately", ctx.privateReplies[0]?.ephemeral === true, JSON.stringify(ctx.privateReplies[0]))
+    eq("no file while the panel shows everything", ctx.files().length, 0)
+}},
+
+{name: "top: a bad count is refused before any button is offered", fn: async () => {
+    await seed("111", {points: 900})
+    const ctx = fakeContext("111")
+    await top.callback({message: ctx.message, args: ["points", `${TOP_CAP + 1}`], guild: guildWith("111")})
+
+    check("no button was offered", !ctx.hasButton(), ctx.replies.join(""))
+    check("the cap is named", (ctx.replies[0] ?? "").includes(`1-${TOP_CAP}`), ctx.replies[0])
+}},
+
+{name: "top: a board too big for one message is trimmed and attached in full", fn: async () => {
+    const ids = Array.from({length: BIG_BOARD}, (value, index) => `9${String(index).padStart(3, "0")}`)
+    for (const id of ids) {
+        await seed(id, {points: 10000 + Number(id)})
+    }
+
+    const ctx = fakeContext("111")
+    await top.callback({message: ctx.message, args: ["points", `${BIG_BOARD}`], guild: guildWith(...ids)})
+    const board = await pressButton(ctx)
+    const shown = numberedLines(board)
+
+    check("it fits a discord message", board.length <= DISCORD_MESSAGE_LIMIT, `${board.length}`)
+    check("far more than the old cap of 25 is shown", shown > 25, `${shown}`)
+    check("the overflow is dropped from the panel", shown < BIG_BOARD, `${shown}`)
+    check("the header says how many of how many", board.startsWith(`**Points Top ${shown} of ${BIG_BOARD}**`),
+        board.split("\n")[0])
+    check("the ranks stay aligned", board.includes(` 1) user9149:`), board.split("\n")[2])
+
+    eq("one file once rows scroll off", ctx.files().length, 1)
+    eq("named for the command", ctx.files()[0].name, "top.txt")
+
+    const full = ctx.attached()
+    eq("the file holds every rank", numberedLines(full), BIG_BOARD)
+    check("including the last one", full.includes(`${BIG_BOARD}) user9000:`), full.slice(-80))
+    check("the file carries the ranking alone", !full.includes("**") && !full.includes("```"), full.slice(0, 80))
+
+    await userModel.collection.deleteMany({id: {$in: ids}})
+}},
+
+{name: "help: every claim the bot accepts is advertised", fn: async () => {
+    const commands = await pressHelp(fakeContext("111"))
 
     for (const claim of ["daily", "weekly", "monthly", "yearly"]) {
-        check(`mentions ${claim}`, ctx.replies[0].includes(claim), ctx.replies[0])
+        check(`mentions ${claim}`, commands.includes(claim), commands)
     }
 }},
 
 {name: "help: the limits the gambling commands enforce are advertised", fn: async () => {
-    const ctx = fakeContext("111")
-    await help.callback({message: ctx.message, args: [], guild: guildWith("111")})
+    const commands = await pressHelp(fakeContext("111"))
 
-    check("names the flip cap", ctx.replies[0].includes("max 50"), ctx.replies[0])
-    check("names the multi-flip minimum", ctx.replies[0].includes("2%+"), ctx.replies[0])
-    check("names the martingale minimum", ctx.replies[0].includes("1%+"), ctx.replies[0])
+    check("names the flip cap", commands.includes("max 50"), commands)
+    check("names the multi-flip minimum", commands.includes("2%+"), commands)
+    check("names the martingale minimum", commands.includes("1%+"), commands)
     eq("a cap is advertised for both flip and martin",
-        (ctx.replies[0].match(/max 50/g) ?? []).length, 2)
+        (commands.match(/max 50/g) ?? []).length, 2)
+}},
+
+{name: "help: every command the bot answers to is advertised", fn: async () => {
+    const commands = await pressHelp(fakeContext("111"))
+
+    for (const name of ["points", "give", "claim", "flip", "martin", "challenge", "rps", "war",
+                        "stats", "top", "serverStats"]) {
+        check(`lists !${name}`, commands.includes(`!${name}`), commands)
+    }
+}},
+
+{name: "help: the command list stays out of the channel", fn: async () => {
+    const ctx = fakeContext("111")
+    const commands = await pressHelp(ctx)
+
+    check("the presser gets it privately", ctx.privateReplies[0]?.ephemeral === true,
+        JSON.stringify(ctx.privateReplies[0]))
+    check("the channel only gets the button message", !ctx.replies.join("").includes("!flip"),
+        ctx.replies.join(""))
+    check("the button hands back the whole list", commands.includes("!flip"), commands)
+
+    await ctx.expire()
+    const expired = ctx.edits[ctx.edits.length - 1]
+    check("the expired message drops its button", (expired?.components ?? ["button"]).length === 0,
+        JSON.stringify(expired))
+    check("the expired message says how to get the list back", (expired?.content ?? "").includes("!help"),
+        JSON.stringify(expired))
+}},
+
+{name: "stats: the button hands the numbers to whoever presses it", fn: async () => {
+    await seed("111", {points: 700, flipsWon: 3, flipsLost: 1, pointsWon: 250, pointsLost: 50})
+    const ctx = fakeContext("111")
+    await stats.callback({message: ctx.message, args: [], guild: guildWith("111")})
+
+    check("the channel only gets the button message", !ctx.replies.join("").includes("Peak Points"),
+        ctx.replies.join(""))
+    check("the button message names whose stats they are", ctx.replies[0].includes("<@111>"), ctx.replies[0])
+
+    const panel = await pressButton(ctx, "222")
+    check("a bystander pressing gets the stats", panel.includes("Peak Points"), panel)
+    check("privately", ctx.privateReplies[0]?.ephemeral === true, JSON.stringify(ctx.privateReplies[0]))
+    check("the balance is the seeded one", panel.includes("700"), panel)
+}},
+
+{name: "stats: the button reads the balance at press time, not at command time", fn: async () => {
+    await seed("111", {points: 700})
+    const ctx = fakeContext("111")
+    await stats.callback({message: ctx.message, args: [], guild: guildWith("111")})
+
+    await userModel.collection.updateOne({id: "111"}, {$set: {points: 12345}})
+    const panel = await pressButton(ctx)
+    check("the fresh balance is shown", panel.includes("12,345"), panel)
+}},
+
+{name: "serverStats: the button hands the totals to whoever presses it", fn: async () => {
+    await seed("111", {points: 700})
+    await seed("222", {points: 300})
+    const ctx = fakeContext("111")
+    await serverStats.callback({message: ctx.message, args: [], guild: guildWith("111", "222")})
+
+    check("the channel only gets the button message", !ctx.replies.join("").includes("Existing Points"),
+        ctx.replies.join(""))
+
+    const panel = await pressButton(ctx, "222")
+    check("a bystander pressing gets the totals", panel.includes("Existing Points"), panel)
+    check("privately", ctx.privateReplies[0]?.ephemeral === true, JSON.stringify(ctx.privateReplies[0]))
 }},
 
 {name: "no command wrote a message Discord would reject", fn: async () => {

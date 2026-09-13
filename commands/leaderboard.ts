@@ -1,11 +1,16 @@
+import { Guild } from "discord.js";
 import userModel from "../db/user";
+import ephemeralButton, { IButtonPanel } from "../util/ephemeralButton";
+import { MAX_MESSAGE_LENGTH } from "../util/fitToMessageLimit";
 import isValidNumberArg from "../util/isValidNumberArg";
 import { deleteMarkdown } from "../util/isValidUserArg";
+import recordFile from "../util/recordFile";
 import textCommand from "../util/textCommand";
 import { settledPoints, settledSecondsActive } from "../util/userUtil";
 
 enum LeaderboardTypes {
     points = 'points',
+    peak = 'maxPoints',
     mostdebt = 'mostDebt',
     leastdebt = 'leastDebt',
     flipslost = 'flipsLost',
@@ -47,6 +52,7 @@ enum LeaderboardTypes {
 
 enum LeaderboardTitles {
     points = 'Points Top',
+    maxPoints = 'Peak Points Top',
     mostDebt = 'Most Debt',
     leastDebt = 'Least Debt',
     flips = 'Total Flips Top',
@@ -89,6 +95,7 @@ enum LeaderboardTitles {
 
 const leaderboardAggregates = {
     points: [{$set: {points: settledPoints}}, {$sort: {points: -1}}],
+    maxPoints: [{$set: {maxPoints: {$max: ["$maxPoints", settledPoints]}}}, {$sort: {maxPoints: -1}}],
     mostDebt: [
         {$addFields: { 
             mostDebt: { $subtract: [{ $add: [ {$add: [ {$floor: { $divide: [ "$secondsActive", 60] } }, 100]}, "$pointsClaimed"]}, "$points"]}}},
@@ -191,11 +198,14 @@ const leaderboardAggregates = {
     ],
 }
 
+const MAX_TOP = 500
+const RECORD_FILE = 'top.txt'
+
 const leaderboard = textCommand({
     name: 'top',
     category: 'leaderboard',
     description: 'top users',
-    expectedArgs: '<leaderboard type> <Optional # of users (1-25)>',
+    expectedArgs: `<leaderboard type> <Optional # of users (1-${MAX_TOP})>`,
     minArgs: 0,
     maxArgs: 2,
     cooldown: '6s',
@@ -206,18 +216,18 @@ const leaderboard = textCommand({
         let leaderboardType = args[0] ? args[0].toLowerCase() : args[0]
         if (!leaderboardType || !LeaderboardTypes[leaderboardType]) {
             await message.reply({content:
-`Use !top <leaderboard type> <optional # of users[1-25]>
+`Use !top <leaderboard type> <optional # of users[1-${MAX_TOP}]>
 \`\`\`
 Leadboard Types:
 
 Points          Flips            Challenges             Rps
-Active          FlipsWon         ChallengesWon          RpsWon
-Given           FlipsLost        ChallengesLost         RpsLost
-Received        FlipPointsWon    ChallengePointsWon     RpsPointsWon
-PointsClaimed   FlipPointsLost   ChallengePointsLost    RpsPointsLost
-MostDebt        PointsFlipped    PointsChallenged       PointsRps
-LeastDebt       Unluckiest
-                Luckiest         Wars
+Peak            FlipsWon         ChallengesWon          RpsWon
+Active          FlipsLost        ChallengesLost         RpsLost
+Given           FlipPointsWon    ChallengePointsWon     RpsPointsWon
+Received        FlipPointsLost   ChallengePointsLost    RpsPointsLost
+PointsClaimed   PointsFlipped    PointsChallenged       PointsRps
+MostDebt        Unluckiest
+LeastDebt       Luckiest         Wars
                 WorstFlipper     WarsWon
                 BestFlipper      WarsLost
                 WinStreak        WarPointsWon
@@ -229,43 +239,60 @@ LeastDebt       Unluckiest
         leaderboardType = LeaderboardTypes[leaderboardType]
 
         const numTop = args[1] ? Number(args[1]) : 5
-        if (!isValidNumberArg(numTop) || numTop > 25) {
-            await message.reply({content: `${args[1]} ain valid for number of top users ${process.env.NOPPERS_EMOJI}, enter a number 1-25`})
+        if (!isValidNumberArg(numTop) || numTop > MAX_TOP) {
+            await message.reply({content: `${args[1]} ain valid for number of top users ${process.env.NOPPERS_EMOJI}, enter a number 1-${MAX_TOP}`})
             return
         }
 
-        const result = await userModel.aggregate([
-            ...(leaderboardAggregates[leaderboardType]),
-            {$limit: numTop}
-        ])
-
-        let maxLen=0
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const t = await Promise.all(result.map(async (user, index): Promise<any> => {
-            const member = await guild.members.fetch(user.id).catch(() => undefined)
-            const name = member ? deleteMarkdown(member.displayName) : "Deleted User"
-            maxLen = maxLen < name.length ? name.length : maxLen
-            return {
-                nameLen: name.length,
-                half1: numTop > 9 ? 
-                        index < 9 ? `${index+1})  ${name}:` : `${index+1}) ${name}:` : 
-                        `${index+1}) ${name}:`, 
-                half2: `${getValueByLeaderBoardType(user, leaderboardType)}\n`
-            }
-        }))
-
-        const formatedResults = t.map( entry => {
-            const space = " ".repeat((maxLen - entry.nameLen) + 1);
-            return `${entry.half1}${space}${entry.half2}`
-        })
-
-        await message.reply({
-            content: `**${LeaderboardTitles[leaderboardType]} ${numTop}**\n\`\`\`
-${formatedResults.join('')}\`\`\``
+        await ephemeralButton(message, {
+            title: `**${LeaderboardTitles[leaderboardType]}**`,
+            command: 'top',
+            label: `Show Leaderboard`,
+            build: () => formatLeaderboard(leaderboardType, numTop, guild)
         })
 })
 
 export default leaderboard
+
+const formatLeaderboard = async (leaderboardType: string, numTop: number, guild: Guild): Promise<IButtonPanel> => {
+    const result = await userModel.aggregate([
+        ...(leaderboardAggregates[leaderboardType]),
+        {$limit: numTop}
+    ])
+
+    let maxLen=0
+    const rankWidth = String(result.length).length
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t = await Promise.all(result.map(async (user, index): Promise<any> => {
+        const member = await guild.members.fetch(user.id).catch(() => undefined)
+        const name = member ? deleteMarkdown(member.displayName) : "Deleted User"
+        maxLen = maxLen < name.length ? name.length : maxLen
+        return {
+            nameLen: name.length,
+            half1: `${String(index+1).padStart(rankWidth)}) ${name}:`,
+            half2: `${getValueByLeaderBoardType(user, leaderboardType)}\n`
+        }
+    }))
+
+    const formatedResults = t.map( entry => {
+        const space = " ".repeat((maxLen - entry.nameLen) + 1);
+        return `${entry.half1}${space}${entry.half2}`
+    })
+
+    const build = (entries: string[]) =>
+`**${LeaderboardTitles[leaderboardType]} ${entries.length}${entries.length < formatedResults.length ? ` of ${formatedResults.length}` : ''}**\n\`\`\`
+${entries.join('')}\`\`\``
+
+    const shown = [...formatedResults]
+    while (shown.length > 1 && build(shown).length > MAX_MESSAGE_LENGTH) {
+        shown.pop()
+    }
+
+    return {
+        content: build(shown),
+        files: shown.length < formatedResults.length ? [recordFile(formatedResults.join(''), RECORD_FILE)] : []
+    }
+}
 
 const getValueByLeaderBoardType = (user, type: string): string => {
     if (type === 'worstFlipper' || type === 'bestFlipper') {

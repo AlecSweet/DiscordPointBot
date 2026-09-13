@@ -3,7 +3,7 @@ import noMutexErrorMessage from "./noMutexErrorMessage"
 import { settleUser } from "./userUtil"
 import { userMutexes } from "./userMutexes"
 
-interface IReplyable {
+export interface IReplyable {
     reply: (options: {content: string}) => unknown
 }
 
