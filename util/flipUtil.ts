@@ -1,4 +1,5 @@
 import { Guild } from "discord.js";
+import { IPointChange } from "../db/pointEvent";
 import { IUser } from "../db/user";
 import { assignDustedRole } from "../events/assignMostPointsRole";
 import { inc, set, updateUser } from "./userUtil";
@@ -14,7 +15,7 @@ const nextStreak = (current: number, direction: 1 | -1): number => {
     return continuesStreak ? current + direction : direction
 }
 
-export const updateUserWin = async (user: IUser, points: number): Promise<IUser> => {
+export const updateUserWin = async (user: IUser, points: number, change: IPointChange): Promise<IUser> => {
     const flipStreak = nextStreak(user.flipStreak, 1)
     return await updateUser(user.id, {
         points: inc(points),
@@ -22,10 +23,10 @@ export const updateUserWin = async (user: IUser, points: number): Promise<IUser>
         flipsWon: inc(1),
         flipStreak: set(flipStreak),
         maxWinStreak: set(Math.max(user.maxWinStreak, flipStreak))
-    })
+    }, change)
 }
 
-export const updateUserLoss = async (user: IUser, points: number): Promise<IUser> => {
+export const updateUserLoss = async (user: IUser, points: number, change: IPointChange): Promise<IUser> => {
     const flipStreak = nextStreak(user.flipStreak, -1)
     return await updateUser(user.id, {
         points: inc(-points),
@@ -33,5 +34,5 @@ export const updateUserLoss = async (user: IUser, points: number): Promise<IUser
         flipsLost: inc(1),
         flipStreak: set(flipStreak),
         maxLossStreak: set(Math.max(user.maxLossStreak, -flipStreak))
-    })
+    }, change)
 }

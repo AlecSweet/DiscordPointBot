@@ -9,7 +9,7 @@ const yearly = textCommand({
     cooldown: '3s',
 }, async (ctx) => {
     await withUserLock(ctx.authorId, ctx.message, async (user) => {
-        await claimYearly(user, ctx.message)
+        await claimYearly(user, ctx.message, ctx.origin)
     })
 })
 

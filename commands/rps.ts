@@ -1,6 +1,7 @@
 import { Mutex, withTimeout } from "async-mutex";
 import { deleteRps, getRps, insertRps, updateRps } from "../db/rps";
 import { parseTarget, parsePoints } from "../util/args";
+import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "../util/userUtil";
 import { Guild, Message } from "discord.js";
 import { cancelRps } from "../util/rpsUtil";
@@ -48,7 +49,7 @@ const rps = textCommand({
             }
 
             await insertRps({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
-            await updateUser(user.id, {points: inc(-cPoints)})
+            await updateUser(user.id, {points: inc(-cPoints)}, {...ctx.origin, reason: "rpsEscrow"})
             return cPoints
         })
 
@@ -135,12 +136,12 @@ const rps = textCommand({
                                     targetUser.points
 
                             if(acceptBet < rpsPoints){
-                                await updateUser(ctx.authorId, {points: inc(rpsPoints - acceptBet)})
+                                await updateUser(ctx.authorId, {points: inc(rpsPoints - acceptBet)}, {...ctx.origin, reason: "rpsRefund"})
                                 await updateRps(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
                             } else {
                                 await updateRps(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
                             }
-                            await updateUser(targetUser.id, {points: inc(-acceptBet)})
+                            await updateUser(targetUser.id, {points: inc(-acceptBet)}, {...ctx.origin, reason: "rpsEscrow"})
                             return {targetUser: targetUser, acceptBet: acceptBet}
                         })
 
@@ -179,7 +180,7 @@ const rps = textCommand({
             if (canceled || cancelButtonHit) {
                 const rps = await getRps(ctx.authorId)
                 if (rps) {
-                    await cancelRps(ctx.authorId, rps)
+                    await cancelRps(ctx.authorId, rps, ctx.origin)
                     rpsMessage.edit({content: `Game canceled ${process.env.NOPPERS_EMOJI}`, components: []})
                 }
             } else {
@@ -188,7 +189,7 @@ const rps = textCommand({
                 setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper` } )}, 1000),
                 setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper, Scissors` })}, 2000),
                 setTimeout(() => {
-                    finishBet(rps.acceptBet, rpsMessage, rps.acceptId, ctx.authorId, guild, ownerPick, acceptPick, gameStarting)
+                    finishBet(rps.acceptBet, rpsMessage, rps.acceptId, ctx.authorId, guild, ownerPick, acceptPick, gameStarting, ctx.origin)
                 }, 3000)
             }
         })
@@ -208,7 +209,7 @@ enum RpsOutcome {
     tie = 3
 }
 
-const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, targetId: string, ownerId: string, guild: Guild, ownerPick: RpsPick, acceptPick: RpsPick, gameStarting: string): Promise<boolean> => {
+const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, targetId: string, ownerId: string, guild: Guild, ownerPick: RpsPick, acceptPick: RpsPick, gameStarting: string, origin: IPointOrigin): Promise<boolean> => {
     let rpsOutcome = RpsOutcome.ownerWon
     if (ownerPick === acceptPick) {
         rpsOutcome = RpsOutcome.tie
@@ -224,13 +225,13 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         }).catch((err) => console.log(err))
         const rps = await getRps(ownerId)
         if (rps) {
-            await cancelRps(ownerId, rps)
+            await cancelRps(ownerId, rps, origin)
         }
     } else if (rpsOutcome === RpsOutcome.ownerWon) {
         await acceptMessage.edit({
             content: `${gameStarting}${outcomeString}<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await updateUser(ownerId, {points: inc(acceptBet*2), rpsPointsWon: inc(acceptBet), rpsWon: inc(1)})
+        await updateUser(ownerId, {points: inc(acceptBet*2), rpsPointsWon: inc(acceptBet), rpsWon: inc(1)}, {...origin, reason: "rpsPayout"})
         const user = await updateUser(targetId, {rpsPointsLost: inc(acceptBet), rpsLost: inc(1)})
         await deleteRps(ownerId)
         if (acceptBet >= 100 && user.points < 5) {
@@ -240,7 +241,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.edit({
             content: `${gameStarting}${outcomeString}<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await updateUser(targetId, {points: inc(acceptBet*2), rpsPointsWon: inc(acceptBet), rpsWon: inc(1)})
+        await updateUser(targetId, {points: inc(acceptBet*2), rpsPointsWon: inc(acceptBet), rpsWon: inc(1)}, {...origin, reason: "rpsPayout"})
         const user = await updateUser(ownerId, {rpsPointsLost: inc(acceptBet), rpsLost: inc(1)})
         await deleteRps(ownerId)
         if (acceptBet >= 100 && user.points < 5) {

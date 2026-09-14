@@ -1,4 +1,5 @@
 import challengeModel, { deleteChallenge, IChallengeRet } from "../db/challenge";
+import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "./userUtil";
 
 export const checkAndCancelMaroonedChallenges = async () => {
@@ -14,11 +15,11 @@ export const checkAndCancelMaroonedChallenges = async () => {
     }
 }
 
-export const cancelChallenge = async (ownerId: string, challenge: IChallengeRet) => {
-    await updateUser(ownerId, {points: inc(challenge.ownerBet)})
+export const cancelChallenge = async (ownerId: string, challenge: IChallengeRet, origin: IPointOrigin = {command: "challenge"}) => {
+    await updateUser(ownerId, {points: inc(challenge.ownerBet)}, {...origin, reason: "challengeRefund"})
 
     if (challenge.acceptId !== '') {
-        await updateUser(challenge.acceptId, {points: inc(challenge.acceptBet)})
+        await updateUser(challenge.acceptId, {points: inc(challenge.acceptBet)}, {...origin, reason: "challengeRefund"})
     }
     await deleteChallenge(ownerId)
 }

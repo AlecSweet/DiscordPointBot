@@ -49,7 +49,7 @@ const war = textCommand({
             }
 
             await insertWar({ownerId: user.id, ownerBet: user.points, startDate: new Date()})
-            await updateUser(user.id, {points: inc(-user.points)})
+            await updateUser(user.id, {points: inc(-user.points)}, {...ctx.origin, reason: "warEscrow"})
             return user.points
         })
 
@@ -106,7 +106,7 @@ const war = textCommand({
                         }
 
                         await updateWar(ctx.authorId, {acceptId: targetUser.id, acceptBet: targetUser.points})
-                        await updateUser(targetUser.id, {points: inc(-targetUser.points)})
+                        await updateUser(targetUser.id, {points: inc(-targetUser.points)}, {...ctx.origin, reason: "warEscrow"})
                         return {targetUser: targetUser, aP: targetUser.points}
                     })
 
@@ -161,7 +161,7 @@ const war = textCommand({
                     })
 
                     if (oP <= 0) {
-                        await updateUser(targetUser.id, {points: inc(aP), warPointsWon: inc(oPInital), warsWon: inc(1)})
+                        await updateUser(targetUser.id, {points: inc(aP), warPointsWon: inc(oPInital), warsWon: inc(1)}, {...ctx.origin, reason: "warPayout"})
                         await updateUser(message.author.id, {warPointsLost: inc(oPInital), warsLost: inc(1)})
                         await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${message.author.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${targetUser.id}> won ${oPInital} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
                         await deleteWar(message.author.id)
@@ -169,7 +169,7 @@ const war = textCommand({
                             await assignDustedRole(guild, message.author.id)
                         }
                     } else {
-                        await updateUser(message.author.id, {points: inc(oP), warPointsWon: inc(apInital), warsWon: inc(1)})
+                        await updateUser(message.author.id, {points: inc(oP), warPointsWon: inc(apInital), warsWon: inc(1)}, {...ctx.origin, reason: "warPayout"})
                         await updateUser(targetUser.id, {warPointsLost: inc(apInital), warsLost: inc(1)})
                         await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${targetUser.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${message.author.id}> won ${apInital} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
                         await deleteWar(message.author.id)
@@ -185,7 +185,7 @@ const war = textCommand({
             if (canceled || cancelButtonHit) {
                 const war = await getWar(ctx.authorId)
                 if (war) {
-                    await cancelWar(ctx.authorId, war)
+                    await cancelWar(ctx.authorId, war, ctx.origin)
                     warMessage.edit({content: `War canceled ${process.env.NOPPERS_EMOJI}`, components: []})
                 }
             }

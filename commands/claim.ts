@@ -18,7 +18,7 @@ const claim = textCommand({
     }
 
     await withUserLock(ctx.authorId, ctx.message, async (user) => {
-        await claimByName(user, ctx.message, claimName)
+        await claimByName(user, ctx.message, claimName, ctx.origin)
     })
 })
 

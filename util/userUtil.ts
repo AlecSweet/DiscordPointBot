@@ -1,4 +1,5 @@
 import userModel, { IncOp, IUser, IUserUpdate, SetOp } from "../db/user"
+import { IPointChange, recordPointEvent } from "../db/pointEvent"
 
 const MS_PER_MINUTE = 60000
 const SECONDS_PER_MINUTE = 60
@@ -15,6 +16,9 @@ export const settledPoints = {$add: [fieldOrZero("points"), unsettledMinutes]}
 export const settledSecondsActive = {$add: [fieldOrZero("secondsActive"), {$multiply: [unsettledMinutes, SECONDS_PER_MINUTE]}]}
 const settledCarriedMs = {$mod: [unsettledMs, MS_PER_MINUTE]}
 
+const nextPointsSeq = {$add: [fieldOrZero("pointsSeq"), 1]}
+const accruedPointsSeq = {$cond: [{$gt: [unsettledMinutes, 0]}, nextPointsSeq, fieldOrZero("pointsSeq")]}
+
 const seededMaxPoints = {$ifNull: ["$maxPoints", fieldOrZero("points")]}
 const raisedMaxPoints = {$max: ["$maxPoints", "$points"]}
 
@@ -26,6 +30,8 @@ const trackingMaxPoints = (assignments: Record<string, unknown>) => [
 
 const accrualPipeline = (disableActivity: boolean) => trackingMaxPoints({
     points: settledPoints,
+    lastAccruedPoints: unsettledMinutes,
+    pointsSeq: accruedPointsSeq,
     secondsActive: settledSecondsActive,
     carriedMs: settledCarriedMs,
     activeStartDate: disableActivity ? null : settledActiveStartDate
@@ -35,7 +41,10 @@ const accruePoints = async (id: string, disableActivity = false): Promise<IUser>
     const accrued = await userModel
         .findOneAndUpdate({id: id}, accrualPipeline(disableActivity), {new: true})
         .lean()
-    return accrued ?? await insertUser(id)
+    if (!accrued) return await insertUser(id)
+
+    await recordPointEvent(accrued, accrued.lastAccruedPoints, {reason: "accrual"})
+    return accrued
 }
 
 export const disableUserActivity = (id: string): Promise<IUser> => accruePoints(id, true)
@@ -59,17 +68,35 @@ export const getAllUsers = async (): Promise<IUser[]> => {
 export const inc = (by: number): IncOp => ({op: "inc", by: by})
 export const set = <V>(to: V): SetOp<V> => ({op: "set", to: to})
 
-export const updateUser = async (id: string, update: IUserUpdate): Promise<IUser> => {
+type PointsUpdate = IUserUpdate & {points: IncOp}
+type BalanceNeutralUpdate = IUserUpdate & {points?: never}
+
+interface IUpdateUser {
+    (id: string, update: PointsUpdate, change: IPointChange): Promise<IUser>
+    (id: string, update: BalanceNeutralUpdate): Promise<IUser>
+}
+
+export const updateUser: IUpdateUser = async (id: string, update: IUserUpdate, change?: IPointChange): Promise<IUser> => {
     const pipeline = toUpdatePipeline(update)
+    if (update.points !== undefined && change === undefined) {
+        throw new Error(`updateUser: points changed for "${id}" without a reason`)
+    }
     if (pipeline.length === 0) return await getOrInsert(id)
 
     const updated = await userModel.findOneAndUpdate({id: id}, pipeline, {new: true}).lean()
-    if (updated) return updated
+    if (updated) return await recordChange(updated, update, change)
 
     await insertUser(id)
     const retried = await userModel.findOneAndUpdate({id: id}, pipeline, {new: true}).lean()
     if (!retried) throw new Error(`updateUser: user "${id}" vanished between insert and update`)
-    return retried
+    return await recordChange(retried, update, change)
+}
+
+const recordChange = async (user: IUser, update: IUserUpdate, change?: IPointChange): Promise<IUser> => {
+    if (update.points !== undefined && change !== undefined) {
+        await recordPointEvent(user, update.points.by, change)
+    }
+    return user
 }
 
 const toUpdatePipeline = (update: IUserUpdate) => {
@@ -83,6 +110,7 @@ const toUpdatePipeline = (update: IUserUpdate) => {
     }
 
     if (Object.keys(assignments).length === 0) return []
+    if (update.points !== undefined && update.points.by !== 0) assignments.pointsSeq = nextPointsSeq
 
     return trackingMaxPoints(assignments)
 }
@@ -94,7 +122,11 @@ const getOrInsert = async (id: string): Promise<IUser> => {
 
 const insertUser = async (id: string): Promise<IUser> => {
     try {
-        return (await userModel.create({id: id})).toObject()
+        const user = new userModel({id: id})
+        user.pointsSeq = user.points ? 1 : 0
+        const created = (await user.save()).toObject()
+        await recordPointEvent(created, created.points, {reason: "newUser"})
+        return created
     } catch (error) {
         if (!isDuplicateKeyError(error)) throw error
         const existing = await userModel.findOne({id: id}).lean()

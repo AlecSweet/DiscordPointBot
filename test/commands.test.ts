@@ -1,6 +1,7 @@
 import { MongoMemoryServer } from "mongodb-memory-server"
 import mongoose from "mongoose"
 import userModel from "../db/user"
+import pointEventModel from "../db/pointEvent"
 import { settleUser } from "../util/userUtil"
 import { addUserMutex, userMutexes } from "../util/userMutexes"
 
@@ -157,6 +158,7 @@ const fakeContext = (authorId: string) => {
         send: async (payload: IFakePayload) => { apply(payload); sent.channel = channel; return sent }
     }
     const message = {
+        id: `msg-${authorId}`,
         author: {id: authorId, username: "tester"},
         channel: channel,
         reply: async (payload: {content: string}) => { replies.push(payload.content); record(payload.content); return sent },
@@ -213,6 +215,7 @@ const pressTop = async (args: string[], guild: ReturnType<typeof guildWith>): Pr
 
 const seed = async (id: string, fields: Record<string, unknown> = {}) => {
     await userModel.collection.deleteOne({id: id})
+    await pointEventModel.collection.deleteMany({userId: id})
     await userModel.collection.insertOne({id: id, points: 100, secondsActive: 0, flipsWon: 0, flipsLost: 0,
         flipStreak: 0, maxWinStreak: 0, maxLossStreak: 0, pointsWon: 0, pointsLost: 0,
         pointsGiven: 0, pointsRecieved: 0, pointsClaimed: 0, activeStartDate: null,
@@ -939,6 +942,74 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("privately", ctx.privateReplies[0]?.ephemeral === true, JSON.stringify(ctx.privateReplies[0]))
 }},
 
+{name: "ledger: a flip run records every flip with the command that made it", fn: async () => {
+    rollSequence(255, 0)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
+
+    const events = await pointEventModel.find({userId: "111"}).sort({seq: 1}).lean()
+    eq("one event per flip", events.length, 4)
+    eq("numbered in order", events.map(event => event.seq).join(","), "1,2,3,4")
+    eq("deltas follow the flips", events.map(event => event.delta).join(","), "100,-100,100,-100")
+    eq("balances follow the flips", events.map(event => event.balance).join(","), "1100,1000,1100,1000")
+    check("all tagged as flips", events.every(event => event.reason === "flip"), JSON.stringify(events.map(event => event.reason)))
+    check("under the flip command", events.every(event => event.command === "flip"), JSON.stringify(events.map(event => event.command)))
+    check("pointing back at the command message", events.every(event => event.messageId === "msg-111"),
+        JSON.stringify(events.map(event => event.messageId)))
+    eq("the last balance is the stored balance", events[events.length - 1]?.balance, (await settleUser("111")).points)
+}},
+
+{name: "ledger: a single flip is recorded too", fn: async () => {
+    rollSequence(0)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["25"], guild: guildWith("111")})
+
+    const events = await pointEventModel.find({userId: "111"}).lean()
+    eq("one event", events.length, 1)
+    eq("a 25 point loss", events[0]?.delta, -25)
+    eq("leaving 975", events[0]?.balance, 975)
+    eq("tagged as a flip", events[0]?.reason, "flip")
+}},
+
+{name: "ledger: martingale records each rung under its own reason", fn: async () => {
+    rollSequence(0, 255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["10", "1"], guild: guildWith("111")})
+
+    const events = await pointEventModel.find({userId: "111"}).sort({seq: 1}).lean()
+    eq("lost 10 then won 20", events.map(event => event.delta).join(","), "-10,20")
+    check("tagged as martingale", events.every(event => event.reason === "martingale"), JSON.stringify(events.map(event => event.reason)))
+    check("under the martin command", events.every(event => event.command === "martin"), JSON.stringify(events.map(event => event.command)))
+}},
+
+{name: "ledger: a gift records both sides", fn: async () => {
+    await seed("111", {points: 500})
+    await seed("222", {points: 500})
+    const ctx = fakeContext("111")
+    await give.callback({message: ctx.message, args: ["<@222>", "200"], guild: guildWith("111", "222")})
+
+    const sent = await pointEventModel.find({userId: "111"}).lean()
+    const received = await pointEventModel.find({userId: "222"}).lean()
+    eq("one event for the giver", sent.length, 1)
+    eq("the giver's side", `${sent[0]?.delta} ${sent[0]?.balance} ${sent[0]?.reason}`, "-200 300 giftSent")
+    eq("one event for the receiver", received.length, 1)
+    eq("the receiver's side", `${received[0]?.delta} ${received[0]?.balance} ${received[0]?.reason}`, "200 700 giftReceived")
+    check("both under the give command", sent[0]?.command === "give" && received[0]?.command === "give",
+        `${sent[0]?.command} / ${received[0]?.command}`)
+}},
+
+{name: "ledger: a refused command records nothing", fn: async () => {
+    await seed("111", {points: 300})
+    await seed("222", {points: 700})
+    const ctx = fakeContext("111")
+    await give.callback({message: ctx.message, args: ["<@222>", "99999"], guild: guildWith("111", "222")})
+
+    eq("no events written", await pointEventModel.countDocuments({}), 0)
+}},
+
 {name: "no command wrote a message Discord would reject", fn: async () => {
     const longest = Math.max(0, ...written.map(content => (content ?? "").length))
     const oversized = written.filter(content => (content ?? "").length > DISCORD_MESSAGE_LIMIT)
@@ -957,6 +1028,7 @@ const main = async () => {
         console.log(t.name)
         try {
             await userModel.collection.deleteMany({})
+            await pointEventModel.collection.deleteMany({})
             await t.fn()
         } catch (e) {
             failures++

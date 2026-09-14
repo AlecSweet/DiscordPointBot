@@ -1,5 +1,6 @@
 import { Guild, Message, TextChannel } from "discord.js"
 import { ICallback, ICommand } from "../wokTypes"
+import { IPointOrigin } from "../db/pointEvent"
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -9,6 +10,7 @@ export interface ITextContext {
     args: string[]
     guild: Guild
     authorId: string
+    origin: IPointOrigin
 }
 
 const textCommand = (
@@ -29,7 +31,8 @@ const textCommand = (
             channel: message.channel as TextChannel,
             args: args,
             guild: guild,
-            authorId: message.author.id
+            authorId: message.author.id,
+            origin: {command: spec.name, messageId: message.id},
         }).catch((err) => console.log(err))
     }
 })
