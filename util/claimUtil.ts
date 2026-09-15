@@ -1,5 +1,6 @@
 import { Message } from "discord.js";
 import moment from "moment";
+import { IPointOrigin } from "../db/pointEvent";
 import { IUser } from "../db/user";
 import { inc, set, updateUser } from "./userUtil";
 
@@ -61,7 +62,7 @@ export const isClaimName = (name: string): name is ClaimName =>
 
 export const claimNames = (): string[] => Object.keys(CLAIM_TYPES)
 
-const claim = async (user: IUser, message: Message<boolean>, claimType: IClaim) => {
+const claim = async (user: IUser, message: Message<boolean>, claimType: IClaim, origin: IPointOrigin) => {
     const periodStart = claimType.periodStart()
     const lastClaimed = user[claimType.field]
 
@@ -76,14 +77,14 @@ const claim = async (user: IUser, message: Message<boolean>, claimType: IClaim) 
         points: inc(claimType.points),
         pointsClaimed: inc(claimType.points),
         [claimType.field]: set(new Date()),
-    })
+    }, {...origin, reason: claimType.field})
     message.reply({content: `You got your ${claimType.name} ${claimType.points} ${process.env.DOGEGE_JAM_EMOJI}`})
 }
 
-export const claimByName = (user: IUser, message: Message<boolean>, name: ClaimName) =>
-    claim(user, message, CLAIM_TYPES[name])
+export const claimByName = (user: IUser, message: Message<boolean>, name: ClaimName, origin: IPointOrigin) =>
+    claim(user, message, CLAIM_TYPES[name], origin)
 
-export const claimDaily = (user: IUser, message: Message<boolean>) => claim(user, message, DAILY)
-export const claimWeekly = (user: IUser, message: Message<boolean>) => claim(user, message, WEEKLY)
-export const claimMonthly = (user: IUser, message: Message<boolean>) => claim(user, message, MONTHLY)
-export const claimYearly = (user: IUser, message: Message<boolean>) => claim(user, message, YEARLY)
+export const claimDaily = (user: IUser, message: Message<boolean>, origin: IPointOrigin) => claim(user, message, DAILY, origin)
+export const claimWeekly = (user: IUser, message: Message<boolean>, origin: IPointOrigin) => claim(user, message, WEEKLY, origin)
+export const claimMonthly = (user: IUser, message: Message<boolean>, origin: IPointOrigin) => claim(user, message, MONTHLY, origin)
+export const claimYearly = (user: IUser, message: Message<boolean>, origin: IPointOrigin) => claim(user, message, YEARLY, origin)

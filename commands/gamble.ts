@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
 import { Guild, Message } from "discord.js";
+import { IPointChange, IPointOrigin } from "../db/pointEvent";
 import { IUser } from "../db/user";
 import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/flipUtil";
 import { parseCount, parsePoints } from "../util/args";
@@ -46,9 +47,9 @@ const flip = textCommand({
 
         const flipAll = ctx.args[0].toUpperCase() === 'ALL'
         if (flips > 1) {
-            await flipMultiple(ctx.guild, user, points, ctx.message, flips, flipAll)
+            await flipMultiple(ctx.guild, user, points, ctx.message, flips, flipAll, ctx.origin)
         } else {
-            await flipOnce(ctx.guild, user, points, ctx.message);
+            await flipOnce(ctx.guild, user, points, ctx.message, ctx.origin);
         }
     })
 })
@@ -107,7 +108,8 @@ const finishFlips = async (flipMessage: Message<boolean>, results: IFlipResult[]
     })
 }
 
-const flipMultiple = async (guild: Guild, user: IUser, points: number, message: Message<boolean>, maxFlips: number, flipAll: boolean) => {
+const flipMultiple = async (guild: Guild, user: IUser, points: number, message: Message<boolean>, maxFlips: number, flipAll: boolean, origin: IPointOrigin) => {
+    const change: IPointChange = {...origin, reason: "flip"}
     const startingPoints = user.points
     const results: IFlipResult[] = []
 
@@ -121,9 +123,9 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
         const wager = flipAll ? user.points : points
         const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
         if (won) {
-            user = await updateUserWin(user, wager)
+            user = await updateUserWin(user, wager, change)
         } else {
-            user = await updateUserLoss(user, wager)
+            user = await updateUserLoss(user, wager, change)
         }
         results.push({won: won, points: user.points})
 
@@ -151,15 +153,16 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
     }
 }
 
-const flipOnce = async (guild: Guild, user: IUser, points: number, message: Message<boolean>) => {
+const flipOnce = async (guild: Guild, user: IUser, points: number, message: Message<boolean>, origin: IPointOrigin) => {
+    const change: IPointChange = {...origin, reason: "flip"}
     const arr = new Uint8Array(1);
     getRandomValues(arr);
     const roll = arr[0]
     const won = !(roll < 128)
     if (won) {
-        user = await updateUserWin(user, points)
+        user = await updateUserWin(user, points, change)
     } else {
-        user = await updateUserLoss(user, points)
+        user = await updateUserLoss(user, points, change)
     }
 
     const rollFormatted = roll + 1

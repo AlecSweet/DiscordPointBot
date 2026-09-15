@@ -5,8 +5,11 @@
   "main": "index.ts",
   "scripts": {
     "start": "ts-node index.ts",
-    "test": "ts-node test/userUtil.test.ts && ts-node test/commands.test.ts",
-    "lint": "eslint . --ext .ts"
+    "test": "ts-node test/userUtil.test.ts && ts-node test/commands.test.ts && ts-node test/backfillMaxPoints.test.ts && ts-node test/observePointHistory.test.ts && ts-node test/buildPointHistory.test.ts",
+    "lint": "eslint . --ext .ts",
+    "backfillMaxPoints": "ts-node scripts/backfillMaxPoints.ts",
+    "seedPointEvents": "ts-node scripts/seedPointEvents.ts",
+    "backfillPointEvents": "ts-node scripts/backfillPointEvents.ts"
   },
   "config": {
     "mongodbMemoryServer": {

@@ -9,7 +9,7 @@ const monthly = textCommand({
     cooldown: '3s',
 }, async (ctx) => {
     await withUserLock(ctx.authorId, ctx.message, async (user) => {
-        await claimMonthly(user, ctx.message)
+        await claimMonthly(user, ctx.message, ctx.origin)
     })
 })
 

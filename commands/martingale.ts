@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv"
 import getRandomValues from 'get-random-values'
 import { Guild, Message } from "discord.js";
+import { IPointChange, IPointOrigin } from "../db/pointEvent";
 import { IUser } from "../db/user";
 import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/flipUtil";
 import { parseCount, parsePoints } from "../util/args";
@@ -42,7 +43,7 @@ const martingale = textCommand({
             return
         }
 
-        await runMartingale(ctx.guild, user, baseBet, wins, ctx.message)
+        await runMartingale(ctx.guild, user, baseBet, wins, ctx.message, ctx.origin)
     })
 })
 
@@ -102,7 +103,8 @@ const finishMartingale = async (martingaleMessage: Message<boolean>, rounds: str
     })
 }
 
-const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins: number, message: Message<boolean>) => {
+const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins: number, message: Message<boolean>, origin: IPointOrigin) => {
+    const change: IPointChange = {...origin, reason: "martingale"}
     const startingPoints = user.points
     let bet = baseBet
     let wins = 0
@@ -118,13 +120,13 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
         const wager = bet
         const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
         if (won) {
-            user = await updateUserWin(user, wager)
+            user = await updateUserWin(user, wager, change)
             rounds[rounds.length-1].push(`✅ ${wager}`)
             rounds.push([])
             wins++
             bet = baseBet
         } else {
-            user = await updateUserLoss(user, wager)
+            user = await updateUserLoss(user, wager, change)
             rounds[rounds.length-1].push(`❌ ${wager}`)
             bet = wager * 2
         }

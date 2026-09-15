@@ -1,4 +1,5 @@
 import rpsModel, { deleteRps, IRpsRet } from "../db/rps";
+import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "./userUtil";
 
 export const checkAndCancelMaroonedRps = async () => {
@@ -13,11 +14,11 @@ export const checkAndCancelMaroonedRps = async () => {
     }
 }
 
-export const cancelRps = async (ownerId: string, rps: IRpsRet) => {
-    await updateUser(ownerId, {points: inc(rps.ownerBet)})
+export const cancelRps = async (ownerId: string, rps: IRpsRet, origin: IPointOrigin = {command: "rps"}) => {
+    await updateUser(ownerId, {points: inc(rps.ownerBet)}, {...origin, reason: "rpsRefund"})
 
     if (rps.acceptId !== '') {
-        await updateUser(rps.acceptId, {points: inc(rps.acceptBet)})
+        await updateUser(rps.acceptId, {points: inc(rps.acceptBet)}, {...origin, reason: "rpsRefund"})
     }
     await deleteRps(ownerId)
 }

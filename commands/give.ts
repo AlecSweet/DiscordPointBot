@@ -24,8 +24,8 @@ const give = textCommand({
             return
         }
 
-        const author = await updateUser(user.id, {points: inc(-points), pointsGiven: inc(points)})
-        await updateUser(gifteeId, {points: inc(points), pointsRecieved: inc(points)})
+        const author = await updateUser(user.id, {points: inc(-points), pointsGiven: inc(points)}, {...ctx.origin, reason: "giftSent"})
+        await updateUser(gifteeId, {points: inc(points), pointsRecieved: inc(points)}, {...ctx.origin, reason: "giftReceived"})
         await ctx.message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
     })
 })

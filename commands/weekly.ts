@@ -9,7 +9,7 @@ const weekly = textCommand({
     cooldown: '3s',
 }, async (ctx) => {
     await withUserLock(ctx.authorId, ctx.message, async (user) => {
-        await claimWeekly(user, ctx.message)
+        await claimWeekly(user, ctx.message, ctx.origin)
     })
 })
 

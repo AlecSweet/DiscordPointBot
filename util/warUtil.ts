@@ -1,4 +1,5 @@
 import warModel, { deleteWar, IwarRet } from "../db/war";
+import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "./userUtil";
 
 export const checkAndCancelMaroonedWars = async () => {
@@ -14,11 +15,11 @@ export const checkAndCancelMaroonedWars = async () => {
     }
 }
 
-export const cancelWar = async (ownerId: string, war: IwarRet) => {
-    await updateUser(ownerId, {points: inc(war.ownerBet)})
+export const cancelWar = async (ownerId: string, war: IwarRet, origin: IPointOrigin = {command: "war"}) => {
+    await updateUser(ownerId, {points: inc(war.ownerBet)}, {...origin, reason: "warRefund"})
 
     if (war.acceptId !== '') {
-        await updateUser(war.acceptId, {points: inc(war.acceptBet)})
+        await updateUser(war.acceptId, {points: inc(war.acceptBet)}, {...origin, reason: "warRefund"})
     }
     await deleteWar(ownerId)
 }

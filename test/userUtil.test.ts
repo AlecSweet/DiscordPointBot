@@ -1,13 +1,21 @@
 import { MongoMemoryServer } from "mongodb-memory-server"
 import mongoose from "mongoose"
 import userModel from "../db/user"
+import pointEventModel, { IPointChange } from "../db/pointEvent"
 import { settleUser, startUserActivity, disableUserActivity, updateUser, inc, set } from "../util/userUtil"
 import { updateUserWin, updateUserLoss } from "../util/flipUtil"
 import { claimDaily, claimWeekly, claimMonthly, claimYearly, claimByName, claimNames, isClaimName } from "../util/claimUtil"
+import { cancelWar } from "../util/warUtil"
+import { counterMismatches, openingBalances, seedOpeningBalances, takeSnapshot } from "../scripts/seedPointEvents"
+import { invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
 import { parsePoints, parseCount } from "../util/args"
 import { Message } from "discord.js"
 
 const MINUTE = 60000
+const FLIP: IPointChange = {reason: "flip", command: "flip"}
+const GIFT: IPointChange = {reason: "giftSent", command: "give"}
+const RECEIVED: IPointChange = {reason: "giftReceived", command: "give"}
+const CLAIM = {command: "claim"}
 
 let failures = 0
 let passes = 0
@@ -153,12 +161,12 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 }},
 
 {name: "new user created by updateUser starts from DEFAULT_POINTS", fn: async () => {
-    const user = await updateUser("brandnew", {points: inc(-50)})
+    const user = await updateUser("brandnew", {points: inc(-50)}, GIFT)
     eq("DEFAULT_POINTS(100) - 50 = 50, not -50", user.points, 50)
 }},
 
 {name: "GUARD: upsert skips schema defaults for fields targeted by $inc", fn: async () => {
-    // This is why insertUser uses create() rather than a one-shot upsert. Mongoose omits
+    // This is why insertUser saves a new document rather than a one-shot upsert. Mongoose omits
     // points from $setOnInsert because $inc already touches it, so an upserted row starts
     // from 0 - 50 instead of DEFAULT_POINTS - 50. Pinned so a mongoose behaviour change
     // surfaces here rather than silently mis-initialising every new user's balance.
@@ -208,14 +216,14 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "flip win/loss persist correct points, counters and streaks", fn: async () => {
     await seed("flip1")
     let user = await settleUser("flip1")
-    user = await updateUserWin(user, 50)
+    user = await updateUserWin(user, 50, FLIP)
     eq("points after win", user.points, 150)
     eq("pointsWon", user.pointsWon, 50)
     eq("flipsWon", user.flipsWon, 1)
     eq("flipStreak", user.flipStreak, 1)
     eq("maxWinStreak", user.maxWinStreak, 1)
 
-    user = await updateUserLoss(user, 30)
+    user = await updateUserLoss(user, 30, FLIP)
     eq("points after loss", user.points, 120)
     eq("pointsLost", user.pointsLost, 30)
     eq("flipStreak flipped to -1", user.flipStreak, -1)
@@ -225,9 +233,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
 {name: "maxPoints: a new high is kept when points fall back", fn: async () => {
     await seed("peak1")
-    let user = await updateUser("peak1", {points: inc(400)})
+    let user = await updateUser("peak1", {points: inc(400)}, GIFT)
     eq("500 is the new high", user.maxPoints, 500)
-    user = await updateUser("peak1", {points: inc(-450)})
+    user = await updateUser("peak1", {points: inc(-450)}, GIFT)
     eq("points fell to 50", user.points, 50)
     eq("the high held at 500", user.maxPoints, 500)
 }},
@@ -235,9 +243,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "maxPoints: a flip win sets the high and a loss does not lower it", fn: async () => {
     await seed("peak2")
     let user = await settleUser("peak2")
-    user = await updateUserWin(user, 50)
+    user = await updateUserWin(user, 50, FLIP)
     eq("the win set the high to 150", user.maxPoints, 150)
-    user = await updateUserLoss(user, 100)
+    user = await updateUserLoss(user, 100, FLIP)
     eq("points down to 50", user.points, 50)
     eq("the high stayed at 150", user.maxPoints, 150)
 }},
@@ -251,7 +259,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
 {name: "maxPoints: a legacy row is seeded from what it held, not what it drops to", fn: async () => {
     await userModel.collection.insertOne({id: "peak4", points: 50000, secondsActive: 0, activeStartDate: null})
-    const user = await updateUser("peak4", {points: inc(-50000)})
+    const user = await updateUser("peak4", {points: inc(-50000)}, GIFT)
     eq("wiped out", user.points, 0)
     eq("the 50000 it was holding is the high", user.maxPoints, 50000)
 }},
@@ -276,7 +284,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimDaily: first ever claim grants 30 points", fn: async () => {
     await seed("claim1", {pointsClaimed: 0, dailyClaim: null})
     const msg = fakeMessage()
-    await claimDaily(await settleUser("claim1"), msg.message)
+    await claimDaily(await settleUser("claim1"), msg.message, CLAIM)
     const user = await settleUser("claim1")
     eq("points 100 -> 130", user.points, 130)
     eq("pointsClaimed 0 -> 30", user.pointsClaimed, 30)
@@ -287,7 +295,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimDaily: second claim the same day is refused", fn: async () => {
     await seed("claim2", {pointsClaimed: 0, dailyClaim: new Date()})
     const msg = fakeMessage()
-    await claimDaily(await settleUser("claim2"), msg.message)
+    await claimDaily(await settleUser("claim2"), msg.message, CLAIM)
     const user = await settleUser("claim2")
     eq("points unchanged", user.points, 100)
     eq("pointsClaimed unchanged", user.pointsClaimed, 0)
@@ -297,7 +305,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimDaily: a claim from two days ago is allowed again", fn: async () => {
     await seed("claim3", {pointsClaimed: 0, dailyClaim: new Date(Date.now() - 2 * 24 * 60 * MINUTE)})
     const msg = fakeMessage()
-    await claimDaily(await settleUser("claim3"), msg.message)
+    await claimDaily(await settleUser("claim3"), msg.message, CLAIM)
     const user = await settleUser("claim3")
     eq("points 100 -> 130", user.points, 130)
     check("granted reply", msg.replies[0].includes("daily 30"), msg.replies[0])
@@ -306,7 +314,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimWeekly: first ever claim grants 120 points", fn: async () => {
     await seed("week1", {pointsClaimed: 0, weeklyClaim: null})
     const msg = fakeMessage()
-    await claimWeekly(await settleUser("week1"), msg.message)
+    await claimWeekly(await settleUser("week1"), msg.message, CLAIM)
     const user = await settleUser("week1")
     eq("points 100 -> 220", user.points, 220)
     eq("pointsClaimed 0 -> 120", user.pointsClaimed, 120)
@@ -316,7 +324,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimWeekly: second claim the same week is refused", fn: async () => {
     await seed("week2", {pointsClaimed: 0, weeklyClaim: new Date()})
     const msg = fakeMessage()
-    await claimWeekly(await settleUser("week2"), msg.message)
+    await claimWeekly(await settleUser("week2"), msg.message, CLAIM)
     const user = await settleUser("week2")
     eq("points unchanged", user.points, 100)
     check("wait reply", msg.replies[0].includes("Wait until"), msg.replies[0])
@@ -325,7 +333,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimWeekly: a claim from eight days ago is allowed again", fn: async () => {
     await seed("week3", {pointsClaimed: 0, weeklyClaim: new Date(Date.now() - 8 * 24 * 60 * MINUTE)})
     const msg = fakeMessage()
-    await claimWeekly(await settleUser("week3"), msg.message)
+    await claimWeekly(await settleUser("week3"), msg.message, CLAIM)
     const user = await settleUser("week3")
     eq("points 100 -> 220", user.points, 220)
     check("granted reply", msg.replies[0].includes("weekly 120"), msg.replies[0])
@@ -334,7 +342,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimMonthly: first ever claim grants 480 points", fn: async () => {
     await seed("month1", {pointsClaimed: 0, monthlyClaim: null})
     const msg = fakeMessage()
-    await claimMonthly(await settleUser("month1"), msg.message)
+    await claimMonthly(await settleUser("month1"), msg.message, CLAIM)
     const user = await settleUser("month1")
     eq("points 100 -> 580", user.points, 580)
     eq("pointsClaimed 0 -> 480", user.pointsClaimed, 480)
@@ -345,7 +353,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimMonthly: second claim the same month is refused", fn: async () => {
     await seed("month2", {pointsClaimed: 0, monthlyClaim: new Date()})
     const msg = fakeMessage()
-    await claimMonthly(await settleUser("month2"), msg.message)
+    await claimMonthly(await settleUser("month2"), msg.message, CLAIM)
     const user = await settleUser("month2")
     eq("points unchanged", user.points, 100)
     check("wait reply", msg.replies[0].includes("Wait until"), msg.replies[0])
@@ -354,7 +362,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimMonthly: a claim from 70 days ago is allowed again", fn: async () => {
     await seed("month3", {pointsClaimed: 0, monthlyClaim: new Date(Date.now() - 70 * 24 * 60 * MINUTE)})
     const msg = fakeMessage()
-    await claimMonthly(await settleUser("month3"), msg.message)
+    await claimMonthly(await settleUser("month3"), msg.message, CLAIM)
     const user = await settleUser("month3")
     eq("points 100 -> 580", user.points, 580)
 }},
@@ -362,7 +370,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimYearly: first ever claim grants 1920 points", fn: async () => {
     await seed("year1", {pointsClaimed: 0, yearlyClaim: null})
     const msg = fakeMessage()
-    await claimYearly(await settleUser("year1"), msg.message)
+    await claimYearly(await settleUser("year1"), msg.message, CLAIM)
     const user = await settleUser("year1")
     eq("points 100 -> 2020", user.points, 2020)
     eq("pointsClaimed 0 -> 1920", user.pointsClaimed, 1920)
@@ -372,7 +380,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimYearly: second claim the same year is refused", fn: async () => {
     await seed("year2", {pointsClaimed: 0, yearlyClaim: new Date()})
     const msg = fakeMessage()
-    await claimYearly(await settleUser("year2"), msg.message)
+    await claimYearly(await settleUser("year2"), msg.message, CLAIM)
     const user = await settleUser("year2")
     eq("points unchanged", user.points, 100)
     check("wait reply", msg.replies[0].includes("Wait until"), msg.replies[0])
@@ -381,7 +389,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claimYearly: a claim from 400 days ago is allowed again", fn: async () => {
     await seed("year3", {pointsClaimed: 0, yearlyClaim: new Date(Date.now() - 400 * 24 * 60 * MINUTE)})
     const msg = fakeMessage()
-    await claimYearly(await settleUser("year3"), msg.message)
+    await claimYearly(await settleUser("year3"), msg.message, CLAIM)
     const user = await settleUser("year3")
     eq("points 100 -> 2020", user.points, 2020)
 }},
@@ -389,10 +397,10 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "claim tiers are independent of one another", fn: async () => {
     await seed("indep", {pointsClaimed: 0, dailyClaim: null, weeklyClaim: null, monthlyClaim: null, yearlyClaim: null})
     const msg = fakeMessage()
-    await claimDaily(await settleUser("indep"), msg.message)
-    await claimWeekly(await settleUser("indep"), msg.message)
-    await claimMonthly(await settleUser("indep"), msg.message)
-    await claimYearly(await settleUser("indep"), msg.message)
+    await claimDaily(await settleUser("indep"), msg.message, CLAIM)
+    await claimWeekly(await settleUser("indep"), msg.message, CLAIM)
+    await claimMonthly(await settleUser("indep"), msg.message, CLAIM)
+    await claimYearly(await settleUser("indep"), msg.message, CLAIM)
     const user = await settleUser("indep")
     eq("all four granted: 100 + 30 + 120 + 480 + 1920", user.points, 2650)
     eq("pointsClaimed totals 2550", user.pointsClaimed, 2550)
@@ -408,7 +416,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     await seed("byname", {pointsClaimed: 0, dailyClaim: null})
     const msg = fakeMessage()
-    await claimByName(await settleUser("byname"), msg.message, "daily")
+    await claimByName(await settleUser("byname"), msg.message, "daily", CLAIM)
     const user = await settleUser("byname")
     eq("routed to the daily tier", user.points, 130)
 }},
@@ -576,6 +584,271 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("26 rejected against a cap of 25", await parseCount("26", 25, overCap.message, "number of flips"), undefined)
     check("named the cap", overCap.replies[0]?.includes("No dog, 25 at a time"), overCap.replies[0])
 }},
+
+{name: "ledger: updateUser records the change, the balance it left and why", fn: async () => {
+    await seed("ledger1")
+    await updateUser("ledger1", {points: inc(-40), pointsGiven: inc(40)}, {reason: "giftSent", command: "give", messageId: "m1"})
+
+    const events = await pointEventModel.find({userId: "ledger1"}).lean()
+    eq("one event", events.length, 1)
+    eq("numbered as the user's first change", events[0]?.seq, 1)
+    eq("the delta", events[0]?.delta, -40)
+    eq("the balance it left", events[0]?.balance, 60)
+    eq("the reason", events[0]?.reason, "giftSent")
+    eq("the command", events[0]?.command, "give")
+    eq("the message", events[0]?.messageId, "m1")
+    check("a timestamp", events[0]?.createdAt instanceof Date)
+}},
+
+{name: "ledger: updates that leave points alone record nothing", fn: async () => {
+    await seed("ledger2")
+    await updateUser("ledger2", {pointsGiven: inc(5), dailyClaim: set(new Date())})
+    const user = await updateUser("ledger2", {points: inc(0)}, GIFT)
+    eq("no events", await pointEventModel.countDocuments({userId: "ledger2"}), 0)
+    eq("nothing was numbered", user.pointsSeq ?? 0, 0)
+}},
+
+{name: "ledger: a points change without a reason is refused before anything is written", fn: async () => {
+    await seed("ledger3")
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (updateUser as any)("ledger3", {points: inc(10)})
+        check("should have thrown", false)
+    } catch (e) {
+        check("threw a descriptive error", (e as Error).message.includes("without a reason"), (e as Error).message)
+    }
+    const user = await settleUser("ledger3")
+    eq("points untouched", user.points, 100)
+    eq("nothing was numbered", user.pointsSeq ?? 0, 0)
+    eq("no events", await pointEventModel.countDocuments({userId: "ledger3"}), 0)
+}},
+
+{name: "ledger: voice accrual is recorded, and a settle with nothing owed records nothing", fn: async () => {
+    await seed("ledger4", {activeStartDate: new Date(Date.now() - (30 * MINUTE + 5000))})
+    await settleUser("ledger4")
+    const settled = await settleUser("ledger4")
+
+    const events = await pointEventModel.find({userId: "ledger4"}).lean()
+    eq("one event for the 30 minutes", events.length, 1)
+    eq("30 points", events[0]?.delta, 30)
+    eq("left at 130", events[0]?.balance, 130)
+    eq("tagged as accrual", events[0]?.reason, "accrual")
+    eq("no command behind it", events[0]?.command, undefined)
+    eq("only the settle that paid out was numbered", settled.pointsSeq, 1)
+}},
+
+{name: "ledger: a new user's starting points are recorded exactly once", fn: async () => {
+    await userModel.init()
+    await Promise.all([
+        settleUser("ledgerRacer"), settleUser("ledgerRacer"), settleUser("ledgerRacer"), settleUser("ledgerRacer"),
+    ])
+
+    const events = await pointEventModel.find({userId: "ledgerRacer"}).lean()
+    eq("one event despite four racing creators", events.length, 1)
+    eq("tagged as a new user", events[0]?.reason, "newUser")
+    eq("for the starting balance", events[0]?.delta, 100)
+    eq("numbered 1", events[0]?.seq, 1)
+    eq("the counter agrees", (await settleUser("ledgerRacer")).pointsSeq, 1)
+}},
+
+{name: "ledger: every change replays to the stored balance", fn: async () => {
+    const msg = fakeMessage()
+    let user = await settleUser("replay")
+    user = await updateUserWin(user, 50, FLIP)
+    user = await updateUserLoss(user, 30, FLIP)
+    await claimDaily(user, msg.message, CLAIM)
+    user = await updateUser("replay", {points: inc(-20), pointsGiven: inc(20)}, GIFT)
+
+    const events = await pointEventModel.find({userId: "replay"}).sort({seq: 1}).lean()
+    eq("reasons in order", events.map(event => event.reason).join(","), "newUser,flip,flip,dailyClaim,giftSent")
+    eq("numbered 1 through 5", events.map(event => event.seq).join(","), "1,2,3,4,5")
+    eq("the counter agrees", user.pointsSeq, 5)
+    eq("the deltas sum to the balance", events.reduce((sum, event) => sum + event.delta, 0), user.points)
+    const running = events.map((event, index) => events.slice(0, index + 1).reduce((sum, earlier) => sum + earlier.delta, 0))
+    eq("every recorded balance is the running total", events.map(event => event.balance).join(","), running.join(","))
+    eq("the claim is filed under the command that made it", events[3]?.command, "claim")
+}},
+
+{name: "ledger: overlapping changes to one user are numbered in the order they landed", fn: async () => {
+    await seed("overlap", {points: 1000})
+    const deltas = [50, -20, 75, -5, 10, -40, 25, -60, 5, 30]
+    await Promise.all(deltas.map(delta => updateUser("overlap", {points: inc(delta)}, RECEIVED)))
+
+    const events = await pointEventModel.find({userId: "overlap"}).sort({seq: 1}).lean()
+    eq("every change numbered once, with no gaps", events.map(event => event.seq).join(","), "1,2,3,4,5,6,7,8,9,10")
+    const broken = events.filter((event, index) =>
+        event.balance === null || event.balance - event.delta !== (index === 0 ? 1000 : events[index - 1].balance))
+    eq("each balance follows from the one before it", broken.length, 0)
+    eq("the counter matches the events", (await settleUser("overlap")).pointsSeq, 10)
+}},
+
+{name: "ledger: the same change can never be recorded twice", fn: async () => {
+    await pointEventModel.init()
+    const event = {userId: "dupe", seq: 1, delta: 5, balance: 105, reason: "giftReceived"}
+    await pointEventModel.create(event)
+    try {
+        await pointEventModel.create(event)
+        check("should have been rejected", false)
+    } catch (e) {
+        check("rejected as a duplicate", (e as {code?: number}).code === 11000, (e as Error).message)
+    }
+}},
+
+{name: "ledger: a reason outside the list is rejected", fn: async () => {
+    try {
+        await pointEventModel.create({userId: "bogus", seq: 1, delta: 5, balance: 105, reason: "lottery"})
+        check("should have been rejected", false)
+    } catch (e) {
+        check("rejected by validation", (e as Error).message.includes("lottery"), (e as Error).message)
+    }
+}},
+
+{name: "ledger: a canceled war refunds both sides under war, even from the cleanup job", fn: async () => {
+    await seed("warOwner", {points: 0})
+    await seed("warTarget", {points: 0})
+    await cancelWar("warOwner", {ownerId: "warOwner", ownerBet: 50, acceptId: "warTarget", acceptBet: 30, startDate: new Date()})
+
+    const owner = await pointEventModel.find({userId: "warOwner"}).lean()
+    const target = await pointEventModel.find({userId: "warTarget"}).lean()
+    eq("owner refunded", `${owner[0]?.delta} ${owner[0]?.balance} ${owner[0]?.reason} ${owner[0]?.command}`, "50 50 warRefund war")
+    eq("target refunded", `${target[0]?.delta} ${target[0]?.balance} ${target[0]?.reason} ${target[0]?.command}`, "30 30 warRefund war")
+}},
+
+{name: "ledger: each user's changes are uniquely numbered by an index", fn: async () => {
+    await pointEventModel.init()
+    const indexes = await pointEventModel.collection.indexes()
+    check("unique on userId then seq", indexes.some(index => index.key?.userId === 1 && index.key?.seq === -1 && index.unique === true),
+        JSON.stringify(indexes.map(index => ({key: index.key, unique: index.unique}))))
+}},
+
+{name: "seed: opening balances make each history add up, and a second run adds nothing", fn: async () => {
+    await seed("fresh", {points: 500})
+    await seed("active", {points: 300})
+    await updateUser("active", {points: inc(50)}, RECEIVED)
+    await seed("broke", {points: 0})
+
+    const openings = openingBalances(await takeSnapshot())
+    eq("only users whose history does not already add up",
+        openings.map(opening => `${opening.userId}:${opening.opening}`).sort().join(","), "active:300,fresh:500")
+    await seedOpeningBalances(openings)
+
+    for (const id of ["fresh", "active"]) {
+        const events = await pointEventModel.find({userId: id}).lean()
+        eq(`${id}'s history adds up to its balance`, events.reduce((sum, event) => sum + event.delta, 0), (await settleUser(id)).points)
+    }
+
+    const active = await pointEventModel.find({userId: "active"}).sort({seq: 1}).lean()
+    eq("the opening is numbered 0, ahead of the first live change",
+        active.map(event => `${event.seq}:${event.reason}`).join(","), "0:openingBalance,1:giftReceived")
+    eq("a second run finds nothing to do", (openingBalances(await takeSnapshot())).length, 0)
+}},
+
+{name: "seed: a lost event neither skews the opening balance nor goes unnoticed", fn: async () => {
+    await seed("gappy", {points: 200})
+    await updateUser("gappy", {points: inc(50)}, RECEIVED)
+    await updateUser("gappy", {points: inc(25)}, RECEIVED)
+    await updateUser("gappy", {points: inc(10)}, RECEIVED)
+    await pointEventModel.deleteOne({userId: "gappy", seq: 2})
+
+    const openings = openingBalances(await takeSnapshot())
+    eq("the opening is what the user held before tracking began",
+        openings.find(opening => opening.userId === "gappy")?.opening, 200)
+
+    const mismatches = counterMismatches(await takeSnapshot())
+    eq("the gap is reported as recorded/highest seq/counter",
+        mismatches.map(mismatch => `${mismatch.userId}:${mismatch.recorded}/${mismatch.lastSeq}/${mismatch.counter}`).join(","), "gappy:2/3/3")
+}},
+
+{name: "seed: a counter that fell behind its events is reported", fn: async () => {
+    await seed("reset", {points: 100})
+    await updateUser("reset", {points: inc(10)}, RECEIVED)
+    await updateUser("reset", {points: inc(10)}, RECEIVED)
+    await userModel.collection.updateOne({id: "reset"}, {$set: {pointsSeq: 1}})
+
+    const mismatches = counterMismatches(await takeSnapshot())
+    eq("the reset is reported as recorded/highest seq/counter",
+        mismatches.map(mismatch => `${mismatch.userId}:${mismatch.recorded}/${mismatch.lastSeq}/${mismatch.counter}`).join(","), "reset:2/2/1")
+}},
+
+{name: "seed: a history that matches its counter is not reported", fn: async () => {
+    await seed("steady", {points: 100})
+    await updateUser("steady", {points: inc(10)}, RECEIVED)
+    await seed("untracked", {points: 100})
+
+    eq("nothing reported", counterMismatches(await takeSnapshot()).length, 0)
+}},
+
+{name: "ledger: a backfilled event may leave its balance unknown, a live one may not", fn: async () => {
+    await pointEventModel.create({userId: "history", seq: -1, delta: 30, balance: null, reason: "dailyClaim", backfilled: true})
+    eq("the backfilled event was kept", await pointEventModel.countDocuments({userId: "history"}), 1)
+    try {
+        await pointEventModel.create({userId: "history", seq: 1, delta: 30, balance: null, reason: "dailyClaim"})
+        check("should have been rejected", false)
+    } catch (e) {
+        check("rejected for the missing balance", (e as Error).message.includes("balance"), (e as Error).message)
+    }
+}},
+
+{name: "seed: backfilled history below 0 does not stand in for an opening balance", fn: async () => {
+    await seed("historic", {points: 400})
+    await pointEventModel.create({userId: "historic", seq: -1, delta: 30, balance: null, reason: "dailyClaim", backfilled: true})
+
+    const snapshot = await takeSnapshot()
+    eq("still gets an opening", openingBalances(snapshot).find(opening => opening.userId === "historic")?.opening, 400)
+    eq("and the history is not mistaken for a counter problem", counterMismatches(snapshot).length, 0)
+}},
+
+{name: "backfill: each user opens at their recorded opening, their first live change, or their balance now", fn: async () => {
+    await seed("opened", {points: 900})
+    await pointEventModel.create({userId: "opened", seq: 0, delta: 700, balance: 700, reason: "openingBalance"})
+    await seed("liveOnly", {points: 300})
+    await updateUser("liveOnly", {points: inc(50)}, RECEIVED)
+    await seed("quiet", {points: 400})
+
+    const {openings, opened, until} = await loadOpenings()
+    eq("one opening found", opened, 1)
+    eq("the recorded opening wins", openings.get("opened"), 700)
+    eq("a live change gives the balance before it", openings.get("liveOnly"), 300)
+    eq("a quiet user opens at what they hold now", openings.get("quiet"), 400)
+    const firstLive = await pointEventModel.findOne({userId: "liveOnly", seq: 1}).lean()
+    eq("history stops ten seconds before the first live change anywhere", until.getTime(), (firstLive?.createdAt.getTime() ?? 0) - 10000)
+}},
+
+{name: "backfill: with nothing tracked live yet, history runs up to now", fn: async () => {
+    const now = new Date("2026-09-14T00:00:00Z")
+    await seed("quiet", {points: 400})
+    eq("until is now", (await loadOpenings(now)).until.getTime(), now.getTime())
+}},
+
+{name: "backfill: an invalid event is caught before anything is removed", fn: async () => {
+    await pointEventModel.create({userId: "kept", seq: -1, delta: 5, balance: null, reason: "dailyClaim", backfilled: true})
+    const broken = [{userId: "kept", seq: -1, delta: Number("nope"), balance: null, reason: "dailyClaim" as const,
+        createdAt: new Date(), backfilled: true as const}]
+
+    eq("the dry run reports it", invalidEvents(broken).length, 1)
+    try {
+        await replaceBackfill(broken)
+        check("should have refused", false)
+    } catch (e) {
+        check("refused with the reason", (e as Error).message.includes("failed validation"), (e as Error).message)
+    }
+    eq("the earlier backfill is still there", await pointEventModel.countDocuments({userId: "kept", backfilled: true}), 1)
+}},
+
+{name: "backfill: applying replaces earlier backfilled history and leaves live events alone", fn: async () => {
+    await seed("replaced", {points: 100})
+    await updateUser("replaced", {points: inc(10)}, RECEIVED)
+    await pointEventModel.create({userId: "replaced", seq: -1, delta: 5, balance: null, reason: "dailyClaim", backfilled: true})
+
+    await replaceBackfill([
+        {userId: "replaced", seq: -2, delta: 30, balance: null, reason: "dailyClaim", createdAt: new Date("2023-01-01T00:00:00Z"), backfilled: true},
+        {userId: "replaced", seq: -1, delta: -30, balance: 100, reason: "unrecorded", createdAt: new Date("2023-01-02T00:00:00Z"), backfilled: true},
+    ])
+
+    const events = await pointEventModel.find({userId: "replaced"}).sort({seq: 1}).lean()
+    eq("the old backfill is gone and the new one sits under the live change",
+        events.map(event => `${event.seq}:${event.reason}`).join(","), "-2:dailyClaim,-1:unrecorded,1:giftReceived")
+}},
 ]
 
 const main = async () => {
@@ -589,6 +862,7 @@ const main = async () => {
         console.log(t.name)
         try {
             await userModel.collection.deleteMany({})
+            await pointEventModel.collection.deleteMany({})
             await t.fn()
         } catch (e) {
             failures++
