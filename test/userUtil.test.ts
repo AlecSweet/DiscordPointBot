@@ -7,7 +7,7 @@ import { updateUserWin, updateUserLoss } from "../util/flipUtil"
 import { claimDaily, claimWeekly, claimMonthly, claimYearly, claimByName, claimNames, isClaimName } from "../util/claimUtil"
 import { cancelWar } from "../util/warUtil"
 import { counterMismatches, openingBalances, seedOpeningBalances, takeSnapshot } from "../scripts/seedPointEvents"
-import { invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
+import { eventLine, invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
 import { parsePoints, parseCount } from "../util/args"
 import { Message } from "discord.js"
 
@@ -842,12 +842,21 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     await replaceBackfill([
         {userId: "replaced", seq: -2, delta: 30, balance: null, reason: "dailyClaim", createdAt: new Date("2023-01-01T00:00:00Z"), backfilled: true},
-        {userId: "replaced", seq: -1, delta: -30, balance: 100, reason: "unrecorded", createdAt: new Date("2023-01-02T00:00:00Z"), backfilled: true},
+        {userId: "replaced", seq: -1, delta: -30, balance: 100, reason: "unrecorded", createdAt: new Date("2023-01-02T00:00:00Z"), backfilled: true,
+            spotted: {channelId: "channel", messageId: "message"}},
     ])
 
     const events = await pointEventModel.find({userId: "replaced"}).sort({seq: 1}).lean()
     eq("the old backfill is gone and the new one sits under the live change",
         events.map(event => `${event.seq}:${event.reason}`).join(","), "-2:dailyClaim,-1:unrecorded,1:giftReceived")
+    eq("where a gap was spotted is kept out of the ledger", events.some(event => "spotted" in event), false)
+}},
+
+{name: "backfill: the --out file links each gap to the message that revealed it", fn: async () => {
+    const spotted = {userId: "linked", seq: -1, delta: 40, balance: 540, reason: "accrual" as const, createdAt: new Date("2023-01-02T00:00:00Z"),
+        backfilled: true as const, spotted: {channelId: "222", messageId: "333"}}
+    eq("the link uses the guild, channel and message", JSON.parse(eventLine(spotted, "111")).spotted.link, "https://discord.com/channels/111/222/333")
+    eq("a gap nobody saw has no link", JSON.parse(eventLine({...spotted, spotted: undefined}, "111")).spotted, undefined)
 }},
 ]
 

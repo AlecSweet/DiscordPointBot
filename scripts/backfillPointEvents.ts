@@ -3,8 +3,8 @@ import { writeFileSync } from "fs"
 import { Client, Intents, Message } from "discord.js"
 import mongoose from "mongoose"
 import pointEventModel from "../db/pointEvent"
-import { buildHistory, IBackfilledEvent } from "./buildPointHistory"
-import { betFacts, challengeFact, IBetFact, IChallengeFact, linkBets, linkChallenges, observe, Observation } from "./observePointHistory"
+import { buildHistory, IBackfilledEvent, refundShapedRuns } from "./buildPointHistory"
+import { betFacts, challengeFact, gameCommand, gameOffer, IBetFact, IChallengeFact, IGameCommand, IGameOffer, IWarFact, linkBets, linkChallenges, linkStakes, observe, Observation, warFact } from "./observePointHistory"
 import { IScanCounts, IScanOptions, scanChannel, scanThreads, textChannel } from "./scanDiscordHistory"
 import { takeSnapshot } from "./seedPointEvents"
 dotenv.config()
@@ -12,6 +12,10 @@ dotenv.config()
 const INSERT_BATCH = 1000
 const HANDOVER_MARGIN_MS = 10000
 const LISTED = 10
+const CONFIRMED_ALL_IN_LOSSES = new Set<string>([
+    "123196732212379648/1548813528121741345",
+    "147149682542379008/1079218935662129252",
+])
 
 const argv = process.argv.slice(2)
 
@@ -70,6 +74,17 @@ export const invalidEvents = (events: IBackfilledEvent[]): IInvalidEvent[] => {
     return invalid
 }
 
+export const eventLine = (event: IBackfilledEvent, guildId: string | undefined): string => JSON.stringify(
+    event.spotted === undefined || guildId === undefined
+        ? event
+        : {...event, spotted: {...event.spotted, link: `https://discord.com/channels/${guildId}/${event.spotted.channelId}/${event.spotted.messageId}`}})
+
+const stored = (event: IBackfilledEvent): IBackfilledEvent => {
+    const copy = {...event}
+    delete copy.spotted
+    return copy
+}
+
 export const replaceBackfill = async (events: IBackfilledEvent[]): Promise<void> => {
     const invalid = invalidEvents(events)
     if (invalid.length > 0) {
@@ -80,7 +95,7 @@ export const replaceBackfill = async (events: IBackfilledEvent[]): Promise<void>
     console.log(`\nremoved ${removed.deletedCount} earlier backfilled events`)
 
     for (let start = 0; start < events.length; start += INSERT_BATCH) {
-        await pointEventModel.insertMany(events.slice(start, start + INSERT_BATCH))
+        await pointEventModel.insertMany(events.slice(start, start + INSERT_BATCH).map(stored))
         console.log(`  wrote ${Math.min(start + INSERT_BATCH, events.length)} of ${events.length}`)
     }
 }
@@ -135,6 +150,9 @@ const backfill = async (client: Client, token: string, settings: ISettings): Pro
     const observations: Observation[] = []
     const challenges: IChallengeFact[] = []
     const bets: IBetFact[] = []
+    const commands: IGameCommand[] = []
+    const offers: IGameOffer[] = []
+    const wars: IWarFact[] = []
     const failed: string[] = []
     const handle = (message: Message<boolean>, record: string | undefined): number => {
         const seen = observe(message, record)
@@ -143,33 +161,47 @@ const backfill = async (client: Client, token: string, settings: ISettings): Pro
         if (challenge) challenges.push(challenge)
         const staked = betFacts(message)
         bets.push(...staked)
-        return seen.length + staked.length + (challenge ? 1 : 0)
+        const offer = gameOffer(message)
+        if (offer) offers.push(offer)
+        const war = warFact(message)
+        if (war) wars.push(war)
+        return seen.length + staked.length + (challenge ? 1 : 0) + (offer ? 1 : 0)
+    }
+    const handlePlayer = (message: Message<boolean>): number => {
+        const command = gameCommand(message)
+        if (command) commands.push(command)
+        return command ? 1 : 0
     }
 
+    let guildId: string | undefined = undefined
     for (const channelId of settings.channelIds) {
         const channel = await textChannel(client, channelId)
         if (channel === undefined) {
             failed.push(`channel ${channelId}`)
             continue
         }
+        guildId = guildId ?? channel.guildId
 
         console.log(`\nscanning #${channel.name}`)
-        const counts = await scanChannel(channel, botId, settings.scan, handle)
+        const counts = await scanChannel(channel, botId, settings.scan, handle, handlePlayer)
             .catch((err): IScanCounts => { console.log(err); return {scanned: 0, found: 0, failed: [`#${channel.name}`]} })
         failed.push(...counts.failed)
         console.log(`scanned ${counts.scanned} messages, ${counts.found} found`)
 
         if (settings.threads) {
-            const threadCounts = await scanThreads(channel, botId, settings.scan, handle)
+            const threadCounts = await scanThreads(channel, botId, settings.scan, handle, handlePlayer)
             failed.push(...threadCounts.failed)
             console.log(`scanned ${threadCounts.scanned} thread messages, ${threadCounts.found} found`)
         }
     }
 
-    const linkedChallenges = linkChallenges(challenges)
+    const stakes = linkStakes(commands, offers, wars)
+    const linkedChallenges = linkChallenges(challenges, stakes.heldOffers)
     const linkedBets = linkBets(bets)
-    const events = buildHistory(observations.concat(linkedChallenges, linkedBets), loaded.openings, until)
+    const events = buildHistory(observations.concat(linkedChallenges, linkedBets, stakes.observations), loaded.openings, until, stakes.holds, CONFIRMED_ALL_IN_LOSSES)
     report(events, observations.length, linkedChallenges.length, linkedBets.length)
+    console.log(`${commands.length} game commands and ${offers.length} game offers gave ${stakes.observations.length} stake observations, ${stakes.holds.length} offers had no command to explain them`)
+    console.log(`${refundShapedRuns(events)} flip-all runs are followed within a day by a gap worth at least half their stake, the mark a hidden stake leaves`)
 
     const invalid = invalidEvents(events)
     if (invalid.length > 0) {
@@ -183,7 +215,7 @@ const backfill = async (client: Client, token: string, settings: ISettings): Pro
     }
 
     if (settings.outPath !== undefined) {
-        writeFileSync(settings.outPath, events.map(event => JSON.stringify(event)).join("\n"))
+        writeFileSync(settings.outPath, events.map(event => eventLine(event, guildId)).join("\n"))
         console.log(`\nevery event written to ${settings.outPath}`)
     }
 
