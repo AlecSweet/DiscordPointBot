@@ -3,7 +3,7 @@ import { IUser } from "./user";
 
 export const POINT_REASONS = [
     "openingBalance", "newUser", "accrual",
-    "flip", "martingale",
+    "flip",
     "giftSent", "giftReceived",
     "dailyClaim", "weeklyClaim", "monthlyClaim", "yearlyClaim",
     "challengeEscrow", "challengeRefund", "challengePayout",

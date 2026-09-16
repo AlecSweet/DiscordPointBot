@@ -8,6 +8,7 @@ import { claimDaily, claimWeekly, claimMonthly, claimYearly, claimByName, claimN
 import { cancelWar } from "../util/warUtil"
 import { counterMismatches, openingBalances, seedOpeningBalances, takeSnapshot } from "../scripts/seedPointEvents"
 import { eventLine, invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
+import { pendingRenames, renameMartingale } from "../scripts/renameMartingaleEvents"
 import { parsePoints, parseCount } from "../util/args"
 import { Message } from "discord.js"
 
@@ -857,6 +858,31 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         backfilled: true as const, spotted: {channelId: "222", messageId: "333"}}
     eq("the link uses the guild, channel and message", JSON.parse(eventLine(spotted, "111")).spotted.link, "https://discord.com/channels/111/222/333")
     eq("a gap nobody saw has no link", JSON.parse(eventLine({...spotted, spotted: undefined}, "111")).spotted, undefined)
+}},
+
+{name: "rename: martingale events become flips under the renamed command, and a second run finds nothing to rename", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "ladder", seq: 1, delta: -10, balance: 90, reason: "martingale", command: "martin"},
+        {userId: "ladder", seq: 2, delta: 20, balance: 110, reason: "martingale", command: "martin"},
+        {userId: "ladder", seq: -1, delta: -50, balance: null, reason: "martingale", backfilled: true},
+        {userId: "ladder", seq: 3, delta: -5, balance: 105, reason: "flip", command: "flip"},
+    ])
+
+    const pending = await pendingRenames()
+    eq("the old reason is counted by the command that wrote it",
+        pending.reasons.map(entry => `${entry.command}:${entry.count}`).join(","), "martin:2,none:1")
+    eq("the old command is counted on its own", pending.commands, 2)
+
+    const renamed = await renameMartingale()
+    eq("three reasons and two commands renamed", `${renamed.reasons}/${renamed.commands}`, "3/2")
+
+    const events = await pointEventModel.find({userId: "ladder"}).sort({seq: 1}).lean()
+    eq("every event is a flip now", events.map(event => event.reason).join(","), "flip,flip,flip,flip")
+    eq("the ladder rungs are still told apart by their command",
+        events.filter(event => event.command === "martingale").length, 2)
+
+    const after = await pendingRenames()
+    eq("a second run finds nothing to rename", `${after.reasons.length}/${after.commands}`, "0/0")
 }},
 ]
 

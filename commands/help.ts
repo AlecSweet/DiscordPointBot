@@ -12,7 +12,7 @@ Balance
 
 Gambling
   !flip        <amount | all | some | min> [flips: max 50, bet 2%+ | some]
-  !martin      <amount: 1%+ | all | some | min> <wins: max 50 | some>
+  !martingale  <amount: 1%+ | all | some | min> <wins: max 50 | some>
   !challenge   <amount | all | some | min> [@user]
   !rps         <amount | all | some | min> [@user]
   !war         [@user]

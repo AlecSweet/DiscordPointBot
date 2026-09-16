@@ -346,10 +346,10 @@ const observeMartinelli = (message: Message<boolean>, userId: string, record: st
     const start = net ? points - Number(net[2]) : null
     const observations: Observation[] = start === null ? [] : [checkpoint(message, userId, start)]
     if (start !== null && after !== start) {
-        observations.push(change(message, userId, after - start, after, "martingale", "martin"))
+        observations.push(change(message, userId, after - start, after, "flip", "martingale"))
     }
     wagers.forEach((wager, index) => {
-        observations.push(change(message, userId, wager, balances[index], "martingale", "martin", spread(message, index + 1, wagers.length, LADDER_STEP_MS)))
+        observations.push(change(message, userId, wager, balances[index], "flip", "martingale", spread(message, index + 1, wagers.length, LADDER_STEP_MS)))
     })
     observations.push(checkpoint(message, userId, points, endedAt(message, wagers.length, LADDER_STEP_MS)))
     return observations

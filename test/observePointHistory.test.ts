@@ -227,14 +227,14 @@ Points: 40     Flips Left: 3
         expected: "777 = 40@bot"},
     {name: "a martingale ladder is walked back from the final balance into changes",
         message: fake(busted),
-        expected: "999 = 1000@bot | 999 +100 -> 1100 martingale/martin@bot | 999 -100 -> 1000 martingale/martin@bot | 999 -200 -> 800 martingale/martin@bot | 999 -400 -> 400 martingale/martin@bot | 999 = 400@bot"},
+        expected: "999 = 1000@bot | 999 +100 -> 1100 flip/martingale@bot | 999 -100 -> 1000 flip/martingale@bot | 999 -200 -> 800 flip/martingale@bot | 999 -400 -> 400 flip/martingale@bot | 999 = 400@bot"},
     {name: "a scrolled ladder records the rounds that scrolled off as one change from its starting balance",
         message: fake(scrolledLadder),
-        expected: "999 = 1000@bot | 999 +100 -> 1100 martingale/martin@bot | 999 -100 -> 1000 martingale/martin@bot | 999 -200 -> 800 martingale/martin@bot | 999 -400 -> 400 martingale/martin@bot | 999 = 400@bot"},
+        expected: "999 = 1000@bot | 999 +100 -> 1100 flip/martingale@bot | 999 -100 -> 1000 flip/martingale@bot | 999 -200 -> 800 flip/martingale@bot | 999 -400 -> 400 flip/martingale@bot | 999 = 400@bot"},
     {name: "the attached ladder record restores the rounds that scrolled off",
         message: fake(scrolledLadder),
         record: "1) ✅ 100\n2) ❌ 100  ❌ 200  ❌ 400",
-        expected: "999 = 1000@bot | 999 +100 -> 1100 martingale/martin@bot | 999 -100 -> 1000 martingale/martin@bot | 999 -200 -> 800 martingale/martin@bot | 999 -400 -> 400 martingale/martin@bot | 999 = 400@bot"},
+        expected: "999 = 1000@bot | 999 +100 -> 1100 flip/martingale@bot | 999 -100 -> 1000 flip/martingale@bot | 999 -200 -> 800 flip/martingale@bot | 999 -400 -> 400 flip/martingale@bot | 999 = 400@bot"},
 
     {name: "a finished war escrows both whole balances and pays the pot to the winner",
         message: fake(`War accepted by <@222> <:pepo_smash:1>\`\`\`   alice | bob
