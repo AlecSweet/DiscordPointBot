@@ -22,8 +22,8 @@ const ROUND_MS = 2000
 const LADDER_FILE = 'martingale.txt'
 
 const martingale = textCommand({
-    name: 'martin',
-    aliases: ['shkreli', 'm', 'tarmin', 'martingale'],
+    name: 'martingale',
+    aliases: ['shkreli', 'm', 'tarmin', 'martin'],
     category: 'gambling',
     description: 'martingale shit',
     expectedArgs: '<# of points to start on (min 1% of your points), "all", "some" or "min"> <# of times to win (max 50) or "some">',
@@ -104,7 +104,7 @@ const finishMartingale = async (martingaleMessage: Message<boolean>, rounds: str
 }
 
 const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins: number, message: Message<boolean>, origin: IPointOrigin) => {
-    const change: IPointChange = {...origin, reason: "martingale"}
+    const change: IPointChange = {...origin, reason: "flip"}
     const startingPoints = user.points
     let bet = baseBet
     let wins = 0

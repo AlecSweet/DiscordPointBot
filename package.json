@@ -9,7 +9,8 @@
     "lint": "eslint . --ext .ts",
     "backfillMaxPoints": "ts-node scripts/backfillMaxPoints.ts",
     "seedPointEvents": "ts-node scripts/seedPointEvents.ts",
-    "backfillPointEvents": "ts-node scripts/backfillPointEvents.ts"
+    "backfillPointEvents": "ts-node scripts/backfillPointEvents.ts",
+    "renameMartingaleEvents": "ts-node scripts/renameMartingaleEvents.ts"
   },
   "config": {
     "mongodbMemoryServer": {

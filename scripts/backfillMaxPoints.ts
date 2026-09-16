@@ -49,9 +49,9 @@ const option = (name: string): string | undefined => {
 export const peakCandidates = (observations: Observation[]): IPeakCandidate[] => {
     const candidates: IPeakCandidate[] = []
     observations.forEach(observation => {
-        if (observation.kind === "checkpoint") {
+        if (observation.kind === "checkpoint" || observation.kind === "allInRun") {
             candidates.push({userId: observation.userId, balance: observation.balance, source: "balanceShown"})
-        } else if (observation.balance !== null) {
+        } else if (observation.kind === "change" && observation.balance !== null) {
             candidates.push({userId: observation.userId, balance: observation.balance, source: observation.reason})
             candidates.push({userId: observation.userId, balance: observation.balance - observation.delta, source: `before ${observation.reason}`})
         }

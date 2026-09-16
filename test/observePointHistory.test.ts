@@ -1,5 +1,5 @@
-import { Message } from "discord.js"
-import { betFacts, challengeFact, IBetFact, IChallengeFact, linkBets, linkChallenges, observe, Observation } from "../scripts/observePointHistory"
+import { Message, SnowflakeUtil } from "discord.js"
+import { betFacts, challengeFact, gameCommand, gameOffer, IBetFact, IChallengeFact, IStakeLinks, linkBets, linkChallenges, linkStakes, observe, Observation, warFact } from "../scripts/observePointHistory"
 
 const ESC = String.fromCharCode(27)
 
@@ -30,11 +30,23 @@ const fake = (content: string, options: IFakeOptions = {}) => ({
     interaction: options.interactionUser ? {user: {id: options.interactionUser}} : null
 }) as unknown as Message<boolean>
 
-const summarize = (observations: Observation[]): string => observations
-    .map(observation => observation.kind === "change"
-        ? `${observation.userId} ${observation.delta > 0 ? "+" : ""}${observation.delta} -> ${observation.balance} ${observation.reason}/${observation.command}@${observation.messageId}`
-        : `${observation.userId} = ${observation.balance}@${observation.messageId}`)
-    .join(" | ")
+const describe = (observation: Observation): string => {
+    if (observation.kind === "change") {
+        return `${observation.userId} ${observation.delta > 0 ? "+" : ""}${observation.delta} -> ${observation.balance} ${observation.reason}/${observation.command}@${observation.messageId}`
+    }
+    if (observation.kind === "allInRun") {
+        return `${observation.userId} all in, ${observation.wins} wins -> ${observation.balance}@${observation.messageId}`
+    }
+    if (observation.kind === "stakeHeld") {
+        return `${observation.userId} holds ${observation.amount} for ${observation.game}@${observation.messageId}`
+    }
+    if (observation.kind === "stakeReleased") {
+        return `${observation.userId} gets the ${observation.game} stake back@${observation.messageId}`
+    }
+    return `${observation.userId} = ${observation.balance}@${observation.messageId}`
+}
+
+const summarize = (observations: Observation[]): string => observations.map(describe).join(" | ")
 
 const check = (name: string, got: string, expected: string) => {
     if (got === expected) { passes++; console.log(`  PASS  ${name}  [${got}]`) }
@@ -122,9 +134,9 @@ const tests: {name: string, message: Message<boolean>, record?: string, expected
     {name: "a stats reply is a checkpoint for the user in its title",
         message: fake(`**<@555>'s Stats**\n\`\`\`Ruby\nPoints          12,345\nActive          1 days / 2 hours / 3 minutes\n\`\`\``, reply),
         expected: "555 = 12345@cmd"},
-    {name: "a war offer nobody answered is a checkpoint for the challenger",
+    {name: "a war offer nobody answered is the challenger's whole balance already in escrow",
         message: fake(`<@111> wants a war  with <@222>, theres 750 points on the line <:pepo_shake:1>\nWar will be canceled <t:1:R>`),
-        expected: "111 = 750@bot"},
+        expected: "111 -750 -> 0 warEscrow/war@bot"},
     {name: "a partial bet refund is a change with the balance it left",
         message: fake(`<@111> got 20 points back <:smodge:1> and now has 30 points`),
         expected: "111 +20 -> 30 betPayout/bet@bot"},
@@ -147,9 +159,12 @@ const tests: {name: string, message: Message<boolean>, record?: string, expected
     {name: "a flip panel turns each numbered line into a change from the one before",
         message: fake(alternating),
         expected: "666 = 1000@bot | 666 +100 -> 1100 flip/flip@bot | 666 -100 -> 1000 flip/flip@bot | 666 +100 -> 1100 flip/flip@bot | 666 -100 -> 1000 flip/flip@bot | 666 = 1000@bot"},
-    {name: "a flip line whose previous balance scrolled off is only a checkpoint",
+    {name: "flip lines that scrolled off are one flip from the start the final net gives to the first line still shown",
         message: fake(scrolledFlips),
-        expected: "666 = 1000@bot | 666 = 1300@bot | 666 +100 -> 1400 flip/flip@bot | 666 +100 -> 1500 flip/flip@bot | 666 +100 -> 1600 flip/flip@bot | 666 +100 -> 1700 flip/flip@bot | 666 = 1700@bot"},
+        expected: "666 = 1000@bot | 666 +300 -> 1300 flip/flip@bot | 666 +100 -> 1400 flip/flip@bot | 666 +100 -> 1500 flip/flip@bot | 666 +100 -> 1600 flip/flip@bot | 666 +100 -> 1700 flip/flip@bot | 666 = 1700@bot"},
+    {name: "without a net to start from, the first flip line still shown is only a checkpoint",
+        message: fake(scrolledFlips.replace(/ \([^)]*\)/, "")),
+        expected: "666 = 1300@bot | 666 +100 -> 1400 flip/flip@bot | 666 +100 -> 1500 flip/flip@bot | 666 +100 -> 1600 flip/flip@bot | 666 +100 -> 1700 flip/flip@bot | 666 = 1700@bot"},
     {name: "the attached flip record fills in the lines that scrolled off",
         message: fake(scrolledFlips),
         record: "1) ✅ 1100\n2) ✅ 1200\n3) ✅ 1300\n4) ✅ 1400\n5) ✅ 1500\n6) ✅ 1600\n7) ✅ 1700",
@@ -193,7 +208,7 @@ Points: 80     Flips Left: 0
 \`\`\`
 You made it through :peepo_comfy:`),
         expected: "777 +10 -> 20 flip/flip@bot | 777 +20 -> 40 flip/flip@bot | 777 +40 -> 80 flip/flip@bot | 777 = 80@bot"},
-    {name: "a 2023 flip-all run that busted only leaves its final balance",
+    {name: "a 2023 flip-all run that busted is handed to the builder with its wins, to stake from the balance before it",
         message: fake(`**<@777>'s Flips**
 \`\`\`Ruby
 Points: 0     Flips Left: 2
@@ -201,17 +216,25 @@ Points: 0     Flips Left: 2
 ✅ ✅ ❌
 \`\`\`
 Sit`),
-        expected: "777 = 0@bot"},
+        expected: "777 all in, 2 wins -> 0@bot"},
+    {name: "a 2023 flip-all run cut off before it finished only leaves its latest balance",
+        message: fake(`**<@777>'s Flips**
+\`\`\`Ruby
+Points: 40     Flips Left: 3
+
+✅ ✅ 3️⃣2️⃣
+\`\`\``),
+        expected: "777 = 40@bot"},
     {name: "a martingale ladder is walked back from the final balance into changes",
         message: fake(busted),
-        expected: "999 = 1000@bot | 999 +100 -> 1100 martingale/martin@bot | 999 -100 -> 1000 martingale/martin@bot | 999 -200 -> 800 martingale/martin@bot | 999 -400 -> 400 martingale/martin@bot | 999 = 400@bot"},
-    {name: "a scrolled ladder only yields the rounds it still shows",
+        expected: "999 = 1000@bot | 999 +100 -> 1100 flip/martingale@bot | 999 -100 -> 1000 flip/martingale@bot | 999 -200 -> 800 flip/martingale@bot | 999 -400 -> 400 flip/martingale@bot | 999 = 400@bot"},
+    {name: "a scrolled ladder records the rounds that scrolled off as one change from its starting balance",
         message: fake(scrolledLadder),
-        expected: "999 = 1000@bot | 999 -100 -> 1000 martingale/martin@bot | 999 -200 -> 800 martingale/martin@bot | 999 -400 -> 400 martingale/martin@bot | 999 = 400@bot"},
+        expected: "999 = 1000@bot | 999 +100 -> 1100 flip/martingale@bot | 999 -100 -> 1000 flip/martingale@bot | 999 -200 -> 800 flip/martingale@bot | 999 -400 -> 400 flip/martingale@bot | 999 = 400@bot"},
     {name: "the attached ladder record restores the rounds that scrolled off",
         message: fake(scrolledLadder),
         record: "1) ✅ 100\n2) ❌ 100  ❌ 200  ❌ 400",
-        expected: "999 = 1000@bot | 999 +100 -> 1100 martingale/martin@bot | 999 -100 -> 1000 martingale/martin@bot | 999 -200 -> 800 martingale/martin@bot | 999 -400 -> 400 martingale/martin@bot | 999 = 400@bot"},
+        expected: "999 = 1000@bot | 999 +100 -> 1100 flip/martingale@bot | 999 -100 -> 1000 flip/martingale@bot | 999 -200 -> 800 flip/martingale@bot | 999 -400 -> 400 flip/martingale@bot | 999 = 400@bot"},
 
     {name: "a finished war escrows both whole balances and pays the pot to the winner",
         message: fake(`War accepted by <@222> <:pepo_smash:1>\`\`\`   alice | bob
@@ -306,10 +329,121 @@ const main = async () => {
     const offsets = (observations: Observation[]): string =>
         observations.map(observation => observation.at.getTime() - AT.getTime()).join(",")
 
+    const waitingCommandId = SnowflakeUtil.generate(AT.getTime() - 8000)
+    check("a gift or claim is dated at its reply, since a command waiting on the user's lock only moves points once it gets the lock",
+        offsets(observe(fake(`You gave <@222> 50 points :nice: You now have 100 points`, {repliedUser: "111", reference: waitingCommandId}))
+            .concat(observe(fake(`You got your daily 30 :dogegejam:`, {repliedUser: "111", reference: waitingCommandId})))), "0,0,0")
+
     check("a single flip is timed to when it was flipped, before its reply",
         offsets(observe(fake(`You won 50 points :nice: You've got 1234 points now.`, reply))), "-3200")
     check("a run's flips are spread evenly between the panel being posted and its last edit",
         offsets(observe(fake(alternating, {editedAt: new Date(AT.getTime() + 12000)}))), "0,3000,6000,9000,12000,12000")
+    check("a flip panel edited long after its run finished puts its flips at the usual flip pace instead",
+        offsets(observe(fake(alternating, {editedAt: new Date(AT.getTime() + 10 * 60000)}))), "0,4100,8200,12300,16400,16400")
+    check("a ladder edited long after its run finished puts its steps at the usual ladder pace instead",
+        offsets(observe(fake(busted, {editedAt: new Date(AT.getTime() + 10 * 60000)}))), "0,2200,4400,6600,8800,8800")
+
+    const said = (content: string, userId: string, options: IFakeOptions) =>
+        ({...(fake(content, options) as unknown as Record<string, unknown>), author: {id: userId}}) as unknown as Message<boolean>
+    const seconds = (count: number): Date => new Date(AT.getTime() + count * 1000)
+
+    const commandsSaid = ["!challenge 490376 <@222>", "!rps all", "!challenge some", "!challenge min", "!war <@222>", "!flip all 10"]
+        .map(content => gameCommand(said(content, "111", {})))
+        .map(command => command === undefined ? "none" : `${command.game} ${command.amount}`)
+        .join(" | ")
+    check("game commands give their game and stake", commandsSaid, "challenge 490376 | rps all | challenge null | challenge 1 | war all | none")
+
+    const offersSeen = [
+        "Challenge canceled :noppers:",
+        "Game canceled :noppers:",
+        "War canceled :noppers:",
+        "<@111> has challenged anyone for 60 points. Challenge will be canceled <t:1:R>",
+        "<@111> has challenged <@222> for up to 100 points.",
+        "<@111> wants to play rock paper scissors against anyone for 40 points. Game will be canceled <t:1:R>",
+        "<@111> wants a war  with <@222>, theres 750 points on the line :pepo_shake:\nWar will be canceled <t:1:R>",
+        "<@111> wants a war  with <@222> :pepo_shake:",
+        "<@111> against <@222> for 40 points <:pepo_smash:1>\n⠀\n<@111> ✌ vs 👊 <@222>\n<@222> wins 40 points <:nice:2>",
+        "<@111> against <@222> for 40 points <:pepo_smash:1>\n⠀\n<@111> 👊 vs 👊 <@222>\nNo one wins :shruggers:",
+    ]
+        .map(content => gameOffer(fake(content)))
+        .map(offer => offer === undefined ? "none" : `${offer.game} ${offer.state} ${offer.ownerId} ${offer.amount} keep ${offer.keep}`)
+        .join(" | ")
+    check("game messages give their state, owner, stake and what the owner kept", offersSeen,
+        "challenge cancelled null null keep 0 | rps cancelled null null keep 0 | war cancelled null null keep 0 | challenge open 111 60 keep 0 | challenge accepted 111 100 keep 0 | rps open 111 40 keep 0 | war open 111 750 keep 0 | war accepted 111 null keep 0 | rps accepted 111 40 keep 40 | rps accepted 111 40 keep 0")
+
+    const staked = (links: IStakeLinks): string => [
+        ...links.observations.map(observation => observation.kind === "stakeHeld"
+            ? `held ${observation.userId} ${observation.amount} ${observation.game}@${observation.messageId} for ${observation.offerId}`
+            : observation.kind === "stakeReleased" ? `released ${observation.userId} ${observation.game}@${observation.messageId} keeping ${observation.keep}` : "other"),
+        ...(links.heldOffers.size > 0 ? [`offers ${Array.from(links.heldOffers).join(",")}`] : []),
+        ...(links.holds.length > 0 ? [`holds ${links.holds.length}`] : []),
+    ].join(" | ")
+
+    const warAcceptContent = `War accepted by <@222> <:pepo_smash:1>\`\`\`   alice | bob\nBet  500 | 300 ⠀\n1) W 800 | 0    \`\`\`<@222> got dusted <:smodge:2>\n<@111> won 300 points <:nice:3>`
+    const command = gameCommand(said("!challenge 490376", "111", {id: "cmd", at: seconds(0)}))
+    const rpsCommand = gameCommand(said("!rps 100", "111", {id: "rpsCmd", at: seconds(0)}))
+    const cancelled = gameOffer(fake("Challenge canceled :noppers:", {id: "offer", at: seconds(2), editedAt: seconds(60)}))
+    const accepted = gameOffer(fake("<@111> has challenged <@222> for up to 100 points.", {id: "offer", at: seconds(2)}))
+    const otherOpen = gameOffer(fake("<@222> has challenged anyone for 60 points. Challenge will be canceled <t:1:R>", {id: "offer", at: seconds(2)}))
+    const lateCancel = gameOffer(fake("Challenge canceled :noppers:", {id: "offer", at: seconds(40), editedAt: seconds(90)}))
+    const rpsGame = gameOffer(fake("<@111> against <@222> for 40 points <:pepo_smash:1>\n⠀\n<@111> ✌ vs 👊 <@222>\n<@222> wins 40 points <:nice:2>",
+        {id: "game", at: seconds(1), editedAt: seconds(30)}))
+    const warOffer = gameOffer(fake("<@111> wants a war  with <@222> :pepo_shake:", {id: "warOffer", at: seconds(0), editedAt: seconds(20)}))
+    const warAccept = warFact(fake(warAcceptContent, {id: "warAccept", at: seconds(20)}))
+    const warOfferAgain = gameOffer(fake("<@111> wants a war  with <@222> :pepo_shake:", {id: "warOfferAgain", at: seconds(40), editedAt: seconds(60)}))
+    const warAcceptAgain = warFact(fake(warAcceptContent.replace("Bet  500", "Bet  800"), {id: "warAcceptAgain", at: seconds(60)}))
+    if (!command || !rpsCommand || !cancelled || !accepted || !otherOpen || !lateCancel || !rpsGame || !warOffer || !warAccept || !warOfferAgain || !warAcceptAgain) {
+        throw new Error("the stake fixtures did not parse")
+    }
+
+    check("a war accept gives the owner and their whole stake", `${warAccept.ownerId} ${warAccept.ownerBet}@${warAccept.messageId}`, "111 500@warAccept")
+    check("a cancelled challenge is paired with the command that staked it and its refund",
+        staked(linkStakes([command], [cancelled])), "held 111 490376 challenge@cmd for offer | released 111 challenge@cmd keeping 0")
+    check("a stake is dated at its offer message, which the bot only sends once the stake is taken",
+        linkStakes([command], [cancelled]).observations.map(observation => observation.at.getTime() - AT.getTime()).join(","), "2000,60000")
+    check("a balance and a stake both remember the channel they were seen in",
+        [...observe(fake(`You have 500 points`, {...reply, thread: "thread"})), ...linkStakes([command], [cancelled]).observations]
+            .map(observation => observation.kind === "checkpoint" || observation.kind === "change" || observation.kind === "stakeHeld" ? observation.channelId : "-")
+            .join(","), "thread,channel,-")
+    check("an accepted challenge holds the stake its offer shows and leaves the rest to the challenge pairing",
+        staked(linkStakes([command], [accepted])), "held 111 100 challenge@cmd for offer | offers offer")
+    check("an accepted challenge with no command found holds an unknown stake until it was accepted",
+        staked(linkStakes([], [accepted])), "held 111 null challenge@offer for offer | released 111 challenge@offer keeping 0")
+    check("an offer from someone else is not paired with the command, but its shown owner still holds the stake",
+        staked(linkStakes([command], [otherOpen])), "held 222 60 challenge@offer for offer | released 222 challenge@offer keeping 0")
+    check("a cancelled offer too long after any command is a hold on the whole channel",
+        staked(linkStakes([command], [lateCancel])), "holds 1")
+    check("an rps command holds its full stake until the game ends, keeping only what was played for",
+        staked(linkStakes([rpsCommand], [rpsGame])), "held 111 100 rps@rpsCmd for game | released 111 rps@rpsCmd keeping 40")
+    check("an rps game with no command found holds an unknown stake while it runs",
+        staked(linkStakes([], [rpsGame])), "held 111 null rps@game for game | released 111 rps@game keeping 40")
+    check("an accepted war holds the owner's exact stake from the offer, tied to the accept that escrowed it",
+        staked(linkStakes([], [warOffer], [warAccept])), "held 111 500 war@warOffer for warAccept")
+    check("back to back wars each take the first accept after their own offer, whatever order they were found in",
+        staked(linkStakes([], [warOfferAgain, warOffer], [warAcceptAgain, warAccept])),
+        "held 111 500 war@warOffer for warAccept | held 111 800 war@warOfferAgain for warAcceptAgain")
+    const repliedWar = fake(warAcceptContent, {id: "warReply", reference: "warCmd"})
+    check("a war accept is tied to the same message its escrows are",
+        `${warFact(repliedWar)?.messageId} ${observe(repliedWar).map(observation => observation.messageId).join(",")}`, "warCmd warCmd,warCmd,warCmd")
+
+    const facts = [
+        fake(`<@111> has challenged <@222> for up to 100 points.`, {id: "offer", at: minutes(0)}),
+        fake(`Challenge accepted by <@222> for 60 points <:pepo_smash:1>`, {id: "accept", at: minutes(1)}),
+        fake(`<@111> wins 60 points <:nice:1>`, {id: "result", at: minutes(1)}),
+    ].map(message => challengeFact(message)).filter((fact): fact is IChallengeFact => fact !== undefined)
+    check("an accepted challenge whose stake was already held refunds the owner what the accepter could not match",
+        summarize(linkChallenges(facts, new Set(["offer"]))),
+        "111 +40 -> null challengeRefund/challenge@accept | 222 -60 -> 0 challengeEscrow/challenge@accept | 111 +120 -> null challengePayout/challenge@accept")
+
+    const challengeIn = (offerChannel: string, resultChannel: string): IChallengeFact[] => [
+        fake(`<@111> has challenged <@222> for up to 100 points.`, {id: "offer", at: minutes(0), thread: offerChannel}),
+        fake(`Challenge accepted by <@222> for 60 points <:pepo_smash:1>`, {id: "accept", at: minutes(1)}),
+        fake(`<@111> wins 60 points <:nice:1>`, {id: "result", at: minutes(1), thread: resultChannel}),
+    ].map(message => challengeFact(message)).filter((fact): fact is IChallengeFact => fact !== undefined)
+    check("a challenge accepted in one channel is not paired with an offer from another",
+        summarize(linkChallenges(challengeIn("other", "channel"))), "")
+    check("a challenge accepted in one channel is not paired with a result from another",
+        summarize(linkChallenges(challengeIn("channel", "other"))), "")
 
     console.log(`\n${passes} passed, ${failures} failed`)
     process.exit(failures > 0 ? 1 : 0)

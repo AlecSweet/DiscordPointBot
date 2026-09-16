@@ -7,7 +7,8 @@ import { updateUserWin, updateUserLoss } from "../util/flipUtil"
 import { claimDaily, claimWeekly, claimMonthly, claimYearly, claimByName, claimNames, isClaimName } from "../util/claimUtil"
 import { cancelWar } from "../util/warUtil"
 import { counterMismatches, openingBalances, seedOpeningBalances, takeSnapshot } from "../scripts/seedPointEvents"
-import { invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
+import { eventLine, invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
+import { pendingRenames, renameMartingale } from "../scripts/renameMartingaleEvents"
 import { parsePoints, parseCount } from "../util/args"
 import { Message } from "discord.js"
 
@@ -842,12 +843,46 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     await replaceBackfill([
         {userId: "replaced", seq: -2, delta: 30, balance: null, reason: "dailyClaim", createdAt: new Date("2023-01-01T00:00:00Z"), backfilled: true},
-        {userId: "replaced", seq: -1, delta: -30, balance: 100, reason: "unrecorded", createdAt: new Date("2023-01-02T00:00:00Z"), backfilled: true},
+        {userId: "replaced", seq: -1, delta: -30, balance: 100, reason: "unrecorded", createdAt: new Date("2023-01-02T00:00:00Z"), backfilled: true,
+            spotted: {channelId: "channel", messageId: "message"}},
     ])
 
     const events = await pointEventModel.find({userId: "replaced"}).sort({seq: 1}).lean()
     eq("the old backfill is gone and the new one sits under the live change",
         events.map(event => `${event.seq}:${event.reason}`).join(","), "-2:dailyClaim,-1:unrecorded,1:giftReceived")
+    eq("where a gap was spotted is kept out of the ledger", events.some(event => "spotted" in event), false)
+}},
+
+{name: "backfill: the --out file links each gap to the message that revealed it", fn: async () => {
+    const spotted = {userId: "linked", seq: -1, delta: 40, balance: 540, reason: "accrual" as const, createdAt: new Date("2023-01-02T00:00:00Z"),
+        backfilled: true as const, spotted: {channelId: "222", messageId: "333"}}
+    eq("the link uses the guild, channel and message", JSON.parse(eventLine(spotted, "111")).spotted.link, "https://discord.com/channels/111/222/333")
+    eq("a gap nobody saw has no link", JSON.parse(eventLine({...spotted, spotted: undefined}, "111")).spotted, undefined)
+}},
+
+{name: "rename: martingale events become flips under the renamed command, and a second run finds nothing to rename", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "ladder", seq: 1, delta: -10, balance: 90, reason: "martingale", command: "martin"},
+        {userId: "ladder", seq: 2, delta: 20, balance: 110, reason: "martingale", command: "martin"},
+        {userId: "ladder", seq: -1, delta: -50, balance: null, reason: "martingale", backfilled: true},
+        {userId: "ladder", seq: 3, delta: -5, balance: 105, reason: "flip", command: "flip"},
+    ])
+
+    const pending = await pendingRenames()
+    eq("the old reason is counted by the command that wrote it",
+        pending.reasons.map(entry => `${entry.command}:${entry.count}`).join(","), "martin:2,none:1")
+    eq("the old command is counted on its own", pending.commands, 2)
+
+    const renamed = await renameMartingale()
+    eq("three reasons and two commands renamed", `${renamed.reasons}/${renamed.commands}`, "3/2")
+
+    const events = await pointEventModel.find({userId: "ladder"}).sort({seq: 1}).lean()
+    eq("every event is a flip now", events.map(event => event.reason).join(","), "flip,flip,flip,flip")
+    eq("the ladder rungs are still told apart by their command",
+        events.filter(event => event.command === "martingale").length, 2)
+
+    const after = await pendingRenames()
+    eq("a second run finds nothing to rename", `${after.reasons.length}/${after.commands}`, "0/0")
 }},
 ]
 

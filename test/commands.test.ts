@@ -832,14 +832,14 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("names the flip cap", commands.includes("max 50"), commands)
     check("names the multi-flip minimum", commands.includes("2%+"), commands)
     check("names the martingale minimum", commands.includes("1%+"), commands)
-    eq("a cap is advertised for both flip and martin",
+    eq("a cap is advertised for both flip and martingale",
         (commands.match(/max 50/g) ?? []).length, 2)
 }},
 
 {name: "help: every wager keyword is advertised by every command that takes one", fn: async () => {
     const commands = await pressHelp(fakeContext("111"))
 
-    for (const name of ["!give", "!flip", "!martin", "!challenge", "!rps"]) {
+    for (const name of ["!give", "!flip", "!martingale", "!challenge", "!rps"]) {
         const line = commands.split("\n").find(l => l.includes(name)) ?? ""
         for (const keyword of ["all", "some", "min"]) {
             check(`${name} advertises ${keyword}`, line.includes(keyword), line)
@@ -850,7 +850,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 {name: "help: every command the bot answers to is advertised", fn: async () => {
     const commands = await pressHelp(fakeContext("111"))
 
-    for (const name of ["points", "give", "claim", "flip", "martin", "challenge", "rps", "war",
+    for (const name of ["points", "give", "claim", "flip", "martingale", "challenge", "rps", "war",
                         "stats", "top", "serverStats"]) {
         check(`lists !${name}`, commands.includes(`!${name}`), commands)
     }
@@ -973,7 +973,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("tagged as a flip", events[0]?.reason, "flip")
 }},
 
-{name: "ledger: martingale records each rung under its own reason", fn: async () => {
+{name: "ledger: martingale records each rung as a flip under the martingale command", fn: async () => {
     rollSequence(0, 255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -981,8 +981,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const events = await pointEventModel.find({userId: "111"}).sort({seq: 1}).lean()
     eq("lost 10 then won 20", events.map(event => event.delta).join(","), "-10,20")
-    check("tagged as martingale", events.every(event => event.reason === "martingale"), JSON.stringify(events.map(event => event.reason)))
-    check("under the martin command", events.every(event => event.command === "martin"), JSON.stringify(events.map(event => event.command)))
+    check("tagged as flips", events.every(event => event.reason === "flip"), JSON.stringify(events.map(event => event.reason)))
+    check("under the martingale command", events.every(event => event.command === "martingale"), JSON.stringify(events.map(event => event.command)))
 }},
 
 {name: "ledger: a gift records both sides", fn: async () => {

@@ -22,6 +22,8 @@ export interface IScanCounts {
 
 export type MessageHandler = (message: Message<boolean>, record: string | undefined) => number
 
+export type PlayerMessageHandler = (message: Message<boolean>) => number
+
 const download = (url: string): Promise<string | undefined> => new Promise(resolve => {
     get(url, response => {
         if (response.statusCode !== 200) {
@@ -44,7 +46,8 @@ const recordOf = async (message: Message<boolean>): Promise<string | undefined> 
 const oldest = (messages: Message<boolean>[]): Message<boolean> =>
     messages.reduce((found, message) => message.createdTimestamp < found.createdTimestamp ? message : found)
 
-export const scanChannel = async (channel: TextBasedChannel, botId: string, options: IScanOptions, handle: MessageHandler): Promise<IScanCounts> => {
+export const scanChannel = async (channel: TextBasedChannel, botId: string, options: IScanOptions, handle: MessageHandler,
+    handlePlayer?: PlayerMessageHandler): Promise<IScanCounts> => {
     let before: Snowflake | undefined = undefined
     let scanned = 0
     let found = 0
@@ -59,6 +62,7 @@ export const scanChannel = async (channel: TextBasedChannel, botId: string, opti
         const recent = messages.filter(message => message.createdTimestamp >= SINCE)
         for (const message of recent) {
             if (message.author.id !== botId) {
+                if (handlePlayer) found += handlePlayer(message)
                 continue
             }
             const record = options.withAttachments ? await recordOf(message) : undefined
@@ -100,7 +104,8 @@ const threadsOf = async (channel: TextChannel | NewsChannel): Promise<ThreadChan
     }
 }
 
-export const scanThreads = async (channel: TextChannel | NewsChannel, botId: string, options: IScanOptions, handle: MessageHandler): Promise<IScanCounts> => {
+export const scanThreads = async (channel: TextChannel | NewsChannel, botId: string, options: IScanOptions, handle: MessageHandler,
+    handlePlayer?: PlayerMessageHandler): Promise<IScanCounts> => {
     const failed: string[] = []
     const threads = await threadsOf(channel)
         .catch((err): ThreadChannel[] => { console.log(err); failed.push(`the thread list of #${channel.name}`); return [] })
@@ -110,7 +115,7 @@ export const scanThreads = async (channel: TextChannel | NewsChannel, botId: str
     let found = 0
     let done = 0
     for (const thread of threads) {
-        const counts = await scanChannel(thread, botId, options, handle)
+        const counts = await scanChannel(thread, botId, options, handle, handlePlayer)
             .catch((err): IScanCounts => { console.log(`${thread.name}: ${err}`); failed.push(`thread ${thread.name}`); return {scanned: 0, found: 0, failed: []} })
         scanned += counts.scanned
         found += counts.found
