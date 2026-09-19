@@ -75,10 +75,39 @@ const pointEventModel: Model<IPointEvent> = models.pointEvent || model<IPointEve
 
 export default pointEventModel;
 
+const RECENT_WRITES = 100
+
+let loading: Promise<IPointEvent[]> | undefined
+
+const oldestFirst = (a: IPointEvent, b: IPointEvent): number =>
+    a.createdAt.getTime() - b.createdAt.getTime() || a.seq - b.seq
+
+const loadPointEvents = async (): Promise<IPointEvent[]> => {
+    const events = await pointEventModel.find({}, {_id: 0}).lean()
+    return events.sort(oldestFirst)
+}
+
+export const allPointEvents = (): Promise<IPointEvent[]> => {
+    if (!loading) loading = loadPointEvents().catch((err) => { loading = undefined; throw err })
+    return loading
+}
+
+export const clearPointEvents = (): void => { loading = undefined }
+
+const alreadyLoaded = (events: IPointEvent[], event: IPointEvent): boolean =>
+    events.slice(-RECENT_WRITES).some(loaded => loaded.userId === event.userId && loaded.seq === event.seq)
+
+const rememberPointEvent = async (event: IPointEvent): Promise<void> => {
+    if (!loading) return
+
+    const events = await loading
+    if (!alreadyLoaded(events, event)) events.push(event)
+}
+
 export const recordPointEvent = async (user: Pick<IUser, "id" | "points" | "pointsSeq">, delta: number, change: IPointChange): Promise<void> => {
     if (!delta) return
 
-    await pointEventModel.create({
+    const event: IPointEvent = {
         userId: user.id,
         seq: user.pointsSeq,
         delta: delta,
@@ -86,5 +115,10 @@ export const recordPointEvent = async (user: Pick<IUser, "id" | "points" | "poin
         reason: change.reason,
         command: change.command,
         messageId: change.messageId,
-    }).catch((err) => console.log(err))
+        createdAt: new Date(),
+    }
+
+    await pointEventModel.create(event)
+        .then(() => rememberPointEvent(event))
+        .catch((err) => console.log(err))
 }

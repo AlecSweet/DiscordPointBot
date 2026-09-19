@@ -11,15 +11,20 @@ import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
+import { isShuttingDown } from "../util/shuttingDown";
+import { whileSettling } from "../util/settling";
 import recordFile from "../util/recordFile";
 import sendPanel from "../util/sendPanel";
 dotenv.config()
 
 const COUNTDOWN_MS = 3000
+const TICK_MS = 900
+const REVEAL_MS = 500
 const MAX_FLIPS = 50
 const MIN_MULTI_BET_PCT = 0.02
 const LINES = 5
 const RECORD_FILE = 'flips.txt'
+const RESTARTING = 'Stopped, the bot is restarting'
 const WIN = '✅'
 const LOSS = '❌'
 
@@ -47,9 +52,9 @@ const flip = textCommand({
 
         const flipAll = ctx.args[0].toUpperCase() === 'ALL'
         if (flips > 1) {
-            await flipMultiple(ctx.guild, user, points, ctx.message, flips, flipAll, ctx.origin)
+            await whileSettling(() => flipMultiple(ctx.guild, user, points, ctx.message, flips, flipAll, ctx.origin))
         } else {
-            await flipOnce(ctx.guild, user, points, ctx.message, ctx.origin);
+            await whileSettling(() => flipOnce(ctx.guild, user, points, ctx.message, ctx.origin));
         }
     })
 })
@@ -120,6 +125,12 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
     for (;;) {
         await sleep(Math.max(0, deadline - Date.now()))
 
+        if (isShuttingDown()) {
+            await finishFlips(flipMessage, results, getMessageContent(user, results, maxFlips, user.points - startingPoints,
+                flipAll ? user.points : points, RESTARTING))
+            return
+        }
+
         const wager = flipAll ? user.points : points
         const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
         if (won) {
@@ -166,15 +177,17 @@ const flipOnce = async (guild: Guild, user: IUser, points: number, message: Mess
     }
 
     const rollFormatted = roll + 1
+    const react = (emoji: string) => { message.react(emoji).catch((err) => console.log(err)) }
 
-    await message.react('3️⃣')
-    setTimeout(async () => { await message.react('2️⃣') }, 900)
-    setTimeout(async () => { await message.react('1️⃣') }, 1800)
-    setTimeout(async () => { won ? await message.react('✅') : await message.react('❌') }, 2700)
-    setTimeout(async () => { 
-        won ? 
-            await message.reply({content: `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256`}) :
-            await message.reply({content: `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`})
-        checkAndAssignDusted(guild, user, points) 
-    }, 3200)
+    react('3️⃣')
+    setTimeout(() => { react('2️⃣') }, TICK_MS)
+    setTimeout(() => { react('1️⃣') }, 2 * TICK_MS)
+    setTimeout(() => { react(won ? '✅' : '❌') }, 3 * TICK_MS)
+    setTimeout(() => {
+        message.reply({content: won ?
+            `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256` :
+            `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`})
+            .catch((err) => console.log(err))
+        checkAndAssignDusted(guild, user, points)
+    }, 3 * TICK_MS + REVEAL_MS)
 }

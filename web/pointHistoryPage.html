@@ -1,0 +1,3181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Point history</title>
+<style>
+    :root {
+        --bg: #16181d;
+        --panel: #1e2128;
+        --line: #2c3039;
+        --text: #e6e8ee;
+        --dim: #9aa1b1;
+        --faint: #7d8492;
+        --indicator: #7385a8;
+        --up: #4ade80;
+        --down: #f87171;
+        --accent: #7aa2f7;
+    }
+    * { box-sizing: border-box }
+    body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+    }
+    header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 18px;
+        align-items: center;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+    }
+    [hidden] { display: none !important }
+    .tabs { display: flex; flex-wrap: wrap; gap: 2px }
+    .tab {
+        background: none;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        padding: 13px 16px 11px;
+        color: var(--dim);
+        font: inherit;
+        font-size: 15px;
+        cursor: pointer;
+    }
+    .tab:hover { color: var(--text); border-bottom-color: var(--line) }
+    .tab.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600 }
+    #meta { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums }
+    .viewHead { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px }
+    .viewHead strong { font-size: 15px }
+    .viewHead .muted { font-size: 12px; max-width: 820px }
+    .divided > span + span { position: relative; margin-left: 8px; padding-left: 9px }
+    .divided > span + span::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        height: .9em;
+        transform: translateY(-50%);
+        border-left: 1px solid var(--faint);
+    }
+    .readout { min-height: 18px; margin-bottom: 6px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums }
+    .viewChart { position: relative; height: 460px }
+    .navRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 6px }
+    .navRow .readout { flex: 1 1 320px; min-width: 0; margin-bottom: 0 }
+    .navRange { color: var(--text); font-size: 14px; white-space: nowrap }
+    .navRange:empty { display: none }
+    .navTools { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 14px }
+    .hoverTip {
+        position: fixed;
+        z-index: 20;
+        pointer-events: none;
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #0f1115;
+        color: var(--text);
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+    }
+    .viewTools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px }
+    .viewTools .legend { margin-top: 0 }
+    .scaleToggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12px }
+    #rankingsChart g.rank { transition: opacity .15s }
+    #rankingsChart:has(g.rank:hover) g.rank:not(:hover) { opacity: .12 }
+    #rankingsChart .hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke }
+    .srcRow, .luckRow { display: grid; gap: 12px; align-items: center; padding: 3px 0 }
+    .srcRow { grid-template-columns: 220px 1fr 90px }
+    .luckRow { grid-template-columns: 220px 1fr 140px 330px }
+    .srcName { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .srcBar { display: grid; height: 16px }
+    .srcSide { display: flex; height: 100% }
+    .srcSide.loss { justify-content: flex-end; border-right: 1px solid var(--dim) }
+    .srcSeg { height: 100% }
+    #sourcesRows [data-family], #sourcesLegend [data-family] { cursor: pointer }
+    #sourcesRows .dim, #sourcesLegend .dim { opacity: .3 }
+    .view > .eventsSlot { margin-top: 16px }
+    .srcName i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px }
+    .srcRow.total { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); font-weight: 600 }
+    .srcSeg.unknown, .legend i.unknown, .srcName i.unknown { background: repeating-linear-gradient(45deg, #4b5263 0 3px, #2c3039 3px 6px) }
+    .srcNet, .luckValue, .luckDetail { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap }
+    .srcNet { text-align: right }
+    .luckBar {
+        position: relative;
+        height: 14px;
+        background: linear-gradient(to right, transparent 0 12.5%, rgba(154, 161, 177, .05) 12.5% 25%,
+            rgba(154, 161, 177, .10) 25% 37.5%, rgba(154, 161, 177, .18) 37.5% 62.5%, rgba(154, 161, 177, .10) 62.5% 75%,
+            rgba(154, 161, 177, .05) 75% 87.5%, transparent 87.5% 100%),
+            rgba(154, 161, 177, .025);
+    }
+    .luckBar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 1px solid var(--dim) }
+    .luckFill { position: absolute; top: 0; bottom: 0; border-radius: 2px }
+    .luckFill.lucky { background: var(--up) }
+    .luckFill.unlucky { background: var(--down) }
+    .periodStrip { margin-bottom: 14px }
+    .periodChart { position: relative; height: 56px }
+    .periodPicked { color: var(--text) }
+    .luckScale { position: relative; height: 30px; font-size: 11px; line-height: 14px; color: var(--dim) }
+    .luckScale span { position: absolute; top: 0; display: flex; flex-direction: column; align-items: center; transform: translateX(-50%) }
+    .luckScale small { font-size: 10px; color: var(--faint) }
+    .formula { display: flex; flex-wrap: wrap; align-items: center; margin: -4px 0 14px; font-size: 13px; color: var(--text) }
+    .formula > span { position: relative }
+    .formula > span + span { margin-left: 12px; padding-left: 13px }
+    .formula > span + span::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        height: 11px;
+        transform: translateY(-50%);
+        border-left: 1px solid var(--faint);
+    }
+    .luckDetail { display: grid; grid-template-columns: 84px 76px 86px 1fr; align-items: center; color: var(--dim) }
+    .luckDetail > span { position: relative; padding-left: 9px }
+    .luckDetail > span:first-child { padding-left: 0 }
+    .luckDetail > span + span::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        height: 10px;
+        transform: translateY(-50%);
+        border-left: 1px solid var(--faint);
+    }
+    #luckNote { margin-top: 10px; font-size: 12px }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600 }
+    header span { color: var(--dim); font-size: 12px }
+    .layout { display: flex; align-items: flex-start; gap: 16px; padding: 16px }
+    .gate { display: flex; justify-content: center; padding: 72px 20px }
+    .gate .card {
+        max-width: 460px;
+        padding: 28px 32px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        text-align: center;
+    }
+    .gate h1 { margin: 0 0 10px; font-size: 20px; font-weight: 600 }
+    .gate p { margin: 0; color: var(--dim); font-size: 14px; line-height: 1.6 }
+    .gate code {
+        padding: 1px 6px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: #262a33;
+        color: var(--text);
+        font-size: 13px;
+    }
+    .view { flex: 1; min-width: 0 }
+    aside {
+        width: 260px;
+        flex: none;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        max-height: calc(100vh - 100px);
+        min-width: 180px;
+        padding-bottom: 16px;
+        resize: horizontal;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        position: sticky;
+        top: 16px;
+    }
+    aside .pinned { flex: none; position: relative }
+    aside .pinned::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid #353a44;
+        border-radius: 7px 7px 0 0;
+        pointer-events: none;
+    }
+    aside .searchRow { flex: none; padding: 8px 12px; border-bottom: 1px solid var(--line) }
+    aside .selectRow {
+        flex: none;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 12px 0;
+        font-size: 10.5px;
+        color: var(--faint);
+    }
+    aside .selectRow button {
+        display: inline;
+        width: auto;
+        padding: 0;
+        border: none;
+        border-bottom: none;
+        background: none;
+        color: var(--accent);
+        font: inherit;
+        cursor: pointer;
+    }
+    aside .selectRow button:hover { background: none; text-decoration: underline }
+    aside .searchRow input { width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: 12px }
+    aside .sortRow {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px 0;
+    }
+    aside .sortRow label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap }
+    aside .sortRow select { flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px }
+    aside .peopleList { flex: 1; min-height: 0; overflow: auto }
+    aside button, aside .leaders {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 8px 12px;
+        background: none;
+        border: none;
+        border-bottom: 1px solid var(--line);
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+    }
+    aside button:hover, aside .leaders:hover { background: #262a33 }
+    aside button.gold { background: rgba(245, 197, 66, .12); box-shadow: inset 3px 0 0 #f5c542 }
+    aside button.silver { background: rgba(203, 213, 225, .12); box-shadow: inset 3px 0 0 #cbd5e1 }
+    aside button.bronze { background: rgba(205, 127, 50, .16); box-shadow: inset 3px 0 0 #cd7f32 }
+    aside button.on, aside .leaders.on { background: #2b3550; color: #fff }
+    aside .leaders select { padding: 0 4px; font-size: 12px; margin-left: 6px }
+    aside .leaders .counter { display: inline-flex; align-items: stretch; margin-left: 6px; vertical-align: middle }
+    aside .leaders .counter input {
+        width: 38px;
+        padding: 0 4px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        border-radius: 6px 0 0 6px;
+        border-right: none;
+        appearance: textfield;
+        -moz-appearance: textfield;
+    }
+    aside .leaders .counter input::-webkit-inner-spin-button, aside .leaders .counter input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    aside .leaders .steps { display: flex; flex-direction: column; width: 15px }
+    aside .leaders .step {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: #262a33;
+        border: 1px solid var(--line);
+        cursor: pointer;
+    }
+    aside .leaders .step:first-child { border-radius: 0 6px 0 0; border-bottom: none }
+    aside .leaders .step:last-child { border-radius: 0 0 6px 0 }
+    aside .leaders .step::before { content: ""; border: 4px solid transparent }
+    aside .leaders .step.up::before { border-bottom-color: var(--dim); margin-bottom: 3px }
+    aside .leaders .step.down::before { border-top-color: var(--dim); margin-top: 3px }
+    aside .leaders .step:hover { border-color: var(--accent) }
+    aside .leaders .step.up:hover::before { border-bottom-color: var(--text) }
+    aside .leaders .step.down:hover::before { border-top-color: var(--text) }
+    aside .leaders .meta select { font-size: 11px }
+    aside .who { display: flex; justify-content: space-between; gap: 8px }
+    aside .who > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    aside .meta { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums }
+    aside .account { margin-left: 10px }
+    aside .standing {
+        display: grid;
+        grid-template-columns: auto var(--now-width, auto) auto var(--peak-width, auto);
+        justify-content: start;
+        align-items: baseline;
+        column-gap: 5px;
+    }
+    aside .standing i { font-style: normal; font-size: 10px; color: var(--faint) }
+    aside .standing b { font-weight: normal; color: var(--dim); text-align: right }
+    aside .standing .split { position: relative; margin-left: 4px; padding-left: 9px }
+    aside .standing .split::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        height: 1.1em;
+        transform: translateY(-50%);
+        border-left: 1px solid var(--faint);
+    }
+    section { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px }
+    .stats { display: flex; flex-wrap: wrap; gap: 20px }
+    .stat { position: relative }
+    .stat + .stat { padding-left: 20px }
+    .stat + .stat::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        height: 58%;
+        border-left: 1px solid var(--line);
+    }
+    .stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums }
+    .stat .cause { margin-left: 10px }
+    .stat > span { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .04em }
+    .chartHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px }
+    .chartHead div { display: flex; gap: 8px; align-items: center }
+    button.tool, select, input {
+        background: #262a33;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 10px;
+        font: inherit;
+    }
+    input[type=range] { width: 120px; padding: 0; accent-color: var(--accent) }
+    .chartHead .tools {
+        position: relative;
+        flex-wrap: wrap;
+        column-gap: 0;
+        row-gap: 8px;
+        margin: 0 -10px;
+    }
+    .chartHead .tools > * { position: relative; padding: 0 10px; white-space: nowrap }
+    .chartHead .tools > *::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        height: 62%;
+        border-left: 1px solid var(--line);
+    }
+    .chartHead .tools::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 1px;
+        background: var(--panel);
+        z-index: 1;
+    }
+    .switch { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 12px }
+    .switch input { display: none }
+    .help {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        color: var(--faint);
+        font-size: 10px;
+        cursor: help;
+    }
+    .help:hover { color: var(--text); border-color: var(--accent) }
+    .help::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: 50%;
+        bottom: 150%;
+        transform: translateX(-50%);
+        width: 210px;
+        padding: 8px 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 11px;
+        line-height: 1.45;
+        text-align: left;
+        text-transform: none;
+        letter-spacing: normal;
+        white-space: normal;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .12s;
+        z-index: 5;
+    }
+    .help:hover::after { opacity: 1 }
+    .help.below::after { top: 150%; bottom: auto; left: auto; right: -6px; transform: none }
+    .viewToggles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-left: auto; padding: 4px 0 }
+    .switch .track {
+        position: relative;
+        width: 34px;
+        height: 18px;
+        flex: none;
+        border-radius: 999px;
+        background: #3a4050;
+        transition: background .15s;
+    }
+    .switch .knob {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--dim);
+        transition: transform .15s, background .15s;
+    }
+    .switch .label { color: var(--dim) }
+    .switch input:checked + .track { background: #2b4a7a }
+    .switch input:checked + .track .knob { transform: translateX(16px); background: var(--accent) }
+    .switch input:checked ~ .label { color: var(--text) }
+    button.tool { cursor: pointer }
+    button.tool:hover { border-color: var(--accent) }
+    svg { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; -webkit-user-select: none; user-select: none }
+    .axis { fill: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums }
+    .grid { stroke: var(--line) }
+    .era { stroke: var(--faint); stroke-dasharray: 4 4 }
+    .eraLabel { fill: var(--faint); font-size: 11px; font-weight: 600 }
+    .vgrid { stroke: var(--line); opacity: .55 }
+    .tip {
+        position: absolute;
+        pointer-events: none;
+        background: #0f1115;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+    }
+    .chartBody {
+        display: flex;
+        flex-direction: column;
+        height: 470px;
+        min-height: 280px;
+        resize: vertical;
+        overflow: hidden;
+    }
+    .chartWrap { position: relative; flex: 1; min-height: 0; overflow: hidden }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--dim) }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+    .filters input[type=search] { flex: 1; min-width: 180px }
+    .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #262a33;
+        color: var(--dim);
+        user-select: none;
+    }
+    .chip.on { background: #2b3550; color: #fff; border-color: var(--accent) }
+    .rows { height: 60vh; overflow: auto; position: relative; margin-top: 10px; border-top: 1px solid var(--line) }
+    .rowsInner { position: relative }
+    .row {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 28px;
+        display: grid;
+        grid-template-columns: 230px 110px 120px 150px 120px 1fr 110px;
+        align-items: center;
+        gap: 8px;
+        padding: 0 6px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+    .row:hover { background: #262a33 }
+    .when { display: grid; grid-template-columns: 58px 26px 32px auto; gap: 0 5px; align-items: center }
+    .when > span:first-child, .when .day { text-align: right }
+    .presets { display: inline-flex; flex-wrap: wrap; gap: 4px }
+    .presets button.tool { padding: 3px 8px; font-size: 12px }
+    button.tool.on { border-color: var(--accent); background: #2b3550; color: #fff }
+    .zoomHint { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim) }
+    .sortable { cursor: pointer; user-select: none }
+    .sortable:hover { color: var(--text) }
+    .sortable.on { color: var(--text) }
+    .sortable i { font-style: normal; margin-left: 4px; color: var(--indicator) }
+    .rowHead {
+        display: grid;
+        grid-template-columns: 230px 110px 120px 150px 120px 1fr 110px;
+        gap: 8px;
+        padding: 6px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+    .pos { color: var(--up) }
+    .neg { color: var(--down) }
+    .muted { color: var(--dim) }
+    .faint { color: var(--faint); font-size: .82em }
+    .gone { color: var(--faint); text-decoration: line-through }
+    #chartTitle .faint { font-weight: normal }
+    #chartContext {
+        color: var(--text);
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    #chartContext:empty { display: none }
+    .faint.rule {
+        border-left: 1px solid currentColor;
+        margin-left: 7px;
+        padding-left: 7px;
+    }
+    a { color: var(--accent) }
+    .empty { padding: 24px; text-align: center; color: var(--dim) }
+</style>
+</head>
+<body>
+<header>
+    <nav class="tabs">
+        <button class="tab on" data-view="history">History</button>
+        <button class="tab" data-view="sources">Sources</button>
+        <button class="tab" data-view="luck">Luck</button>
+        <button class="tab" data-view="concentration">Concentration</button>
+        <button class="tab" data-view="rankings">Rankings</button>
+    </nav>
+    <span class="divided" id="meta"></span>
+    <div class="viewToggles">
+        <label class="switch">
+            <input type="checkbox" id="hideSettled" checked>
+            <span class="track"><span class="knob"></span></span>
+            <span class="help below" data-tip="Drops points that were only held during a game. Stakes that came back disappear, payouts show what was actually won, and a stake the opponent took stays on as a loss. Applies to every tab.">?</span>
+            <span class="label">Hide Escrows</span>
+        </label>
+        <label class="switch">
+            <input type="checkbox" id="hideRecovered">
+            <span class="track"><span class="knob"></span></span>
+            <span class="help below" data-tip="Drops events rebuilt from old Discord messages, leaving only the history the bot recorded itself. Applies to every tab.">?</span>
+            <span class="label">Hide Recovered</span>
+        </label>
+    </div>
+</header>
+<div class="layout">
+    <aside>
+        <div class="pinned" id="pinned"></div>
+        <div class="sortRow">
+            <label class="muted" for="sortBy">Sort by</label>
+            <select id="sortBy">
+                <option value="now">Points Now</option>
+                <option value="peak">Peak Points</option>
+                <option value="commands">Most Commands</option>
+                <option value="recent">Most Recent</option>
+            </select>
+        </div>
+        <div class="searchRow">
+            <input type="search" id="userSearch" placeholder="Search users" autocomplete="off">
+        </div>
+        <div class="selectRow" id="selection"></div>
+        <div class="peopleList" id="people"></div>
+    </aside>
+    <main class="view" data-view="history">
+        <section>
+            <div class="card stats" id="stats"></div>
+            <div class="card">
+                <div class="chartHead">
+                    <div><strong id="chartTitle"></strong></div>
+                    <span id="chartContext"></span>
+                    <div class="tools">
+                        <label class="switch" id="reasonSwitch">
+                            <input type="checkbox" id="colourByReason" checked>
+                            <span class="track"><span class="knob"></span></span>
+                            <span class="label">Color Code</span>
+                        </label>
+                        <span class="zoomHint">Navigate<span class="help" data-tip="Drag to pan through time, and scroll to zoom in on the moment under the cursor. Scroll sideways or hold Shift while scrolling to pan. On touch, drag to pan and pinch to zoom. Shift-drag picks out a range, and double-click shows everything.">?</span></span>
+                        <span class="presets">
+                            <button class="tool" data-preset="week">1W</button>
+                            <button class="tool" data-preset="month">1M</button>
+                            <button class="tool" data-preset="quarter">3M</button>
+                            <button class="tool" data-preset="year">1Y</button>
+                            <button class="tool" data-preset="all">All</button>
+                        </span>
+                    </div>
+                </div>
+                <div class="chartBody">
+                    <div class="chartWrap">
+                        <svg id="chart"></svg>
+                        <div class="tip" id="tip"></div>
+                    </div>
+                    <div class="legend" id="legend"></div>
+                </div>
+            </div>
+            <div class="eventsSlot" id="historyEvents">
+            <div class="card" id="eventsCard">
+                <div class="filters">
+                    <input type="search" id="search" placeholder="Search amount, reason, command or user">
+                    <span class="chip" id="hideAccrual">Hide accrual</span>
+                    <button class="tool" id="clearReasons">All reasons</button>
+                </div>
+                <div class="filters" id="reasons" style="margin-top:8px"></div>
+                <div class="rowHead">
+                    <span class="sortable" data-sort="when">When<i></i></span>
+                    <span class="sortable" data-sort="amount">Amount<i></i></span>
+                    <span class="sortable" data-sort="balance">Balance<i></i></span>
+                    <span>Reason</span><span>Command</span><span>User</span><span>Recovered</span>
+                </div>
+                <div class="rows" id="rows"><div class="rowsInner" id="rowsInner"></div></div>
+                <div class="muted divided" id="count" style="margin-top:8px"></div>
+            </div>
+            </div>
+        </section>
+    </main>
+    <div class="view" data-view="sources" hidden>
+        <div class="card">
+            <div class="viewHead">
+                <strong id="sourcesTitle"></strong>
+                <span class="muted" id="sourcesText"></span>
+            </div>
+            <div class="periodStrip" id="sourcesPeriod">
+                <div class="navRow">
+                    <div class="readout" id="sourcesPeriodReadout"></div>
+                    <span class="navTools">
+                        <span class="zoomHint">Period<span class="help" data-tip="The bars show when points changed. Drag across them to add up points over just that stretch of time. Drag the highlighted period to move it or its edges to resize it. Scroll to zoom in on the moment under the cursor, scroll sideways or hold Shift while scrolling to pan, and double-click to count every point again.">?</span></span>
+                        <span class="presets" id="sourcesPeriodPresets">
+                            <button class="tool" data-range="week">1W</button>
+                            <button class="tool" data-range="month">1M</button>
+                            <button class="tool" data-range="quarter">3M</button>
+                            <button class="tool" data-range="year">1Y</button>
+                            <button class="tool" data-range="all">All</button>
+                        </span>
+                    </span>
+                </div>
+                <div class="periodChart"><svg id="sourcesPeriodChart"></svg></div>
+            </div>
+            <div class="viewTools" id="sourcesTools">
+                <div class="legend" id="sourcesLegend"></div>
+                <span class="scaleToggle">
+                    <span class="muted">Scale</span>
+                    <span class="presets">
+                        <button class="tool on" data-scale="member">Per member</button>
+                        <button class="tool" data-scale="shared">Shared</button>
+                    </span>
+                </span>
+            </div>
+            <div id="sourcesRows"></div>
+        </div>
+        <div class="eventsSlot" id="sourcesEvents"></div>
+    </div>
+    <div class="view" data-view="luck" hidden>
+        <div class="card">
+            <div class="viewHead">
+                <strong id="luckTitle"></strong>
+                <span class="muted" id="luckText"></span>
+            </div>
+            <div class="formula"><span>&sigma; = &radic;(stake&#8321;&sup2; + stake&#8322;&sup2; + &hellip;)</span><span>Luck = net flip points &divide; &sigma;</span></div>
+            <div class="periodStrip" id="luckPeriod">
+                <div class="navRow">
+                    <div class="readout" id="luckPeriodReadout"></div>
+                    <span class="navTools">
+                        <span class="zoomHint">Period<span class="help" data-tip="The bars show when flips happened. Drag across them to measure luck over just that stretch of time. Drag the highlighted period to move it or its edges to resize it. Scroll to zoom in on the moment under the cursor, scroll sideways or hold Shift while scrolling to pan, and double-click to measure every flip again.">?</span></span>
+                        <span class="presets" id="luckPeriodPresets">
+                            <button class="tool" data-range="week">1W</button>
+                            <button class="tool" data-range="month">1M</button>
+                            <button class="tool" data-range="quarter">3M</button>
+                            <button class="tool" data-range="year">1Y</button>
+                            <button class="tool" data-range="all">All</button>
+                        </span>
+                    </span>
+                </div>
+                <div class="periodChart"><svg id="luckPeriodChart"></svg></div>
+            </div>
+            <div id="luckRows"></div>
+            <div class="muted" id="luckNote"></div>
+            <div id="luckSingle" hidden>
+                <div class="navRow">
+                    <div class="readout divided" id="luckReadout"></div>
+                    <span class="navRange" id="luckRange"></span>
+                    <span class="navTools">
+                        <span class="zoomHint">Navigate<span class="help" data-tip="Drag to pan through time, and scroll to zoom in on the moment under the cursor. Scroll sideways or hold Shift while scrolling to pan. On touch, drag to pan and pinch to zoom. Shift-drag picks out a range, and double-click shows everything.">?</span></span>
+                        <span class="presets" id="luckPresets">
+                            <button class="tool" data-range="week">1W</button>
+                            <button class="tool" data-range="month">1M</button>
+                            <button class="tool" data-range="quarter">3M</button>
+                            <button class="tool" data-range="year">1Y</button>
+                            <button class="tool" data-range="all">All</button>
+                        </span>
+                    </span>
+                </div>
+                <div class="viewChart"><svg id="luckChart"></svg></div>
+                <div class="legend" id="luckLegend"></div>
+            </div>
+        </div>
+        <div class="eventsSlot" id="luckEvents"></div>
+    </div>
+    <div class="view" data-view="concentration" hidden>
+        <div class="card">
+            <div class="viewHead">
+                <strong id="concentrationTitle"></strong>
+                <span class="muted" id="concentrationText"></span>
+            </div>
+            <div class="navRow">
+                <div class="readout divided" id="concentrationReadout"></div>
+                <span class="navRange" id="concentrationRange"></span>
+                <span class="navTools">
+                    <span class="zoomHint">Navigate<span class="help" data-tip="Drag to pan through time, and scroll to zoom in on the moment under the cursor. Scroll sideways or hold Shift while scrolling to pan. On touch, drag to pan and pinch to zoom. Shift-drag picks out a range, and double-click shows everything.">?</span></span>
+                    <span class="presets" id="concentrationPresets">
+                        <button class="tool" data-range="week">1W</button>
+                        <button class="tool" data-range="month">1M</button>
+                        <button class="tool" data-range="quarter">3M</button>
+                        <button class="tool" data-range="year">1Y</button>
+                        <button class="tool" data-range="all">All</button>
+                    </span>
+                </span>
+            </div>
+            <div class="viewChart"><svg id="concentrationChart"></svg></div>
+            <div class="legend" id="concentrationLegend"></div>
+        </div>
+    </div>
+    <div class="view" data-view="rankings" hidden>
+        <div class="card">
+            <div class="viewHead">
+                <strong id="rankingsTitle"></strong>
+                <span class="muted" id="rankingsText"></span>
+            </div>
+            <div class="navRow">
+                <div class="readout divided" id="rankingsReadout"></div>
+                <span class="navRange" id="rankingsRange"></span>
+                <span class="navTools">
+                    <span class="zoomHint">Navigate<span class="help" data-tip="Drag to pan through time, and scroll to zoom in on the moment under the cursor. Scroll sideways or hold Shift while scrolling to pan. On touch, drag to pan and pinch to zoom. Shift-drag picks out a range, and double-click shows everything.">?</span></span>
+                    <span class="presets" id="rankingsPresets">
+                        <button class="tool" data-range="week">1W</button>
+                        <button class="tool" data-range="month">1M</button>
+                        <button class="tool" data-range="quarter">3M</button>
+                        <button class="tool" data-range="year">1Y</button>
+                        <button class="tool" data-range="all">All</button>
+                    </span>
+                </span>
+            </div>
+            <div class="viewChart"><svg id="rankingsChart"></svg></div>
+        </div>
+    </div>
+</div>
+<div class="hoverTip" id="hoverTip"></div>
+<div class="gate" id="gate" hidden>
+    <div class="card">
+        <h1 id="gateTitle"></h1>
+        <p id="gateBody"></p>
+    </div>
+</div>
+<script>
+const POINT_HISTORY_ROUTE = "/api/pointHistory"
+const SESSION_ROUTE = "/api/session"
+
+const start = (payload) => {
+    const ROW_HEIGHT = 28
+    const DEFAULT_TOP_COUNT = 10
+    const MIN_SPAN_MS = 60000
+    const ZOOM_SPEED = 0.002
+    const PINCH_ZOOM_SPEED = 0.01
+    const MAX_ZOOM_PER_EVENT = 0.4
+    const LINE_PX = 16
+    const WHEEL_SETTLE_MS = 150
+    const TAP_SLOP_PX = 4
+    const PRESET_TOLERANCE_MS = 1000
+    const ESCAPES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}
+    const escape = text => String(text).replace(/[&<>"']/g, character => ESCAPES[character])
+    const divided = parts => parts.map(part => "<span>" + escape(part) + "</span>").join("")
+    const departed = subject => !subject.username
+    const nameText = subject => departed(subject) ? "removed" : subject.name
+    const nameHtml = subject => departed(subject) ? "<span class='gone'>removed</span>" : escape(subject.name)
+    const who = person => departed(person) ? nameHtml(person)
+        : escape(person.name) + (person.username !== person.name
+            ? "<span class='faint rule'>" + escape(person.username) + "</span>" : "")
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+                         "July", "August", "September", "October", "November", "December"]
+    const ORDINALS = ["th", "st", "nd", "rd"]
+    const MONTH_MS = 2629800000
+    const YEAR_MS = 31557600000
+    const DAY_MS = 86400000
+    const WEEK_MS = 7 * DAY_MS
+    const RANGE_TIMES_UNDER_MS = 2 * DAY_MS
+    const RANGE_DAYS_UNDER_MS = 60 * DAY_MS
+    const PRESETS = {week: WEEK_MS, month: MONTH_MS, quarter: 3 * MONTH_MS, year: YEAR_MS, all: null}
+    const PAIR_WINDOW_MS = 5 * 60 * 1000
+    const pad = value => (value < 10 ? "0" : "") + value
+    const MEDALS = ["gold", "silver", "bronze"]
+    const REASON_COLOURS = {
+        accrual: "#64748b",
+        claim: "#4ade80",
+        gift: "#c084fc",
+        flip: "#7aa2f7",
+        war: "#fb923c",
+        challenge: "#f472b6",
+        rps: "#facc15",
+        bet: "#a3e635",
+    }
+    const COLOUR_ORDER = ["accrual", "claim", "gift", "flip", "war", "challenge", "rps", "bet"]
+    const colourRank = reason => {
+        const at = COLOUR_ORDER.indexOf(reason)
+        return at === -1 ? COLOUR_ORDER.length : at
+    }
+    const STAGE_ORDER = ["daily", "weekly", "monthly", "yearly", "Received", "Sent", "Escrow", "Refund", "Payout"]
+    const stageRank = reason => {
+        const at = STAGE_ORDER.findIndex(stage => reason.startsWith(stage) || reason.endsWith(stage))
+        return at === -1 ? STAGE_ORDER.length : at
+    }
+    const GAME_REASON = /^(war|challenge|rps|bet)(Escrow|Refund|Payout|Lost)$/
+    const GIFT_REASON = /^gift(Sent|Received)$/
+    const CLAIM_REASON = /^(daily|weekly|monthly|yearly)Claim$/
+    const colourKey = reason => {
+        const game = GAME_REASON.exec(reason)
+        if (game) return game[1]
+        if (GIFT_REASON.test(reason)) return "gift"
+        if (CLAIM_REASON.test(reason)) return "claim"
+        return reason
+    }
+    const colourFor = reason => REASON_COLOURS[reason] || "#9aa1b1"
+    const UNCODED = new Set(["openingBalance", "unrecorded"])
+    const QUIET = new Set(["openingBalance", "unrecorded", "accrual"])
+    const REASON_LABELS = {
+        openingBalance: "Live Tracking Start",
+        dailyClaim: "Daily",
+        weeklyClaim: "Weekly",
+        monthlyClaim: "Monthly",
+        yearlyClaim: "Yearly",
+    }
+    const PALETTE = ["#7aa2f7", "#4ade80", "#f87171", "#fbbf24", "#c084fc", "#38bdf8", "#fb923c", "#34d399", "#f472b6", "#a3e635"]
+
+    const readable = reason => reason.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(" ")
+        .map(word => word === "rps" ? "RPS" : word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ")
+    const labelFor = reason => REASON_LABELS[reason] || readable(reason)
+
+    const openingOf = rows => {
+        const first = rows.findIndex(row => row[2] !== null)
+        return first === -1 ? 0 : rows.slice(0, first + 1).reduce((balance, row) => balance - row[1], rows[first][2])
+    }
+
+    const people = payload.people.map((person, index) => {
+        const rows = person.rows
+        let running = openingOf(rows)
+        let peak = 0
+        let peakAt = 0
+        const points = rows.map(row => {
+            running = row[2] === null ? running + row[1] : row[2]
+            if (running > peak) { peak = running; peakAt = row[0] }
+            return {t: row[0], v: running, reason: payload.reasons[row[3]]}
+        })
+        return {
+            key: String(index),
+            name: person.name,
+            username: person.username,
+            nickname: person.nickname,
+            rows: rows,
+            points: points,
+            last: running,
+            peak: peak,
+            peakAt: peakAt,
+            from: rows.length ? rows[0][0] : 0,
+            to: rows.length ? rows[rows.length - 1][0] : 0,
+        }
+    })
+
+    const events = []
+    people.forEach(person => {
+        person.list = person.rows.map((row, index) => ({
+            userId: person.key,
+            name: person.name,
+            username: person.username,
+            at: row[0],
+            delta: row[1],
+            balance: person.points[index].v,
+            shown: row[2],
+            reason: payload.reasons[row[3]],
+            label: readable(payload.reasons[row[3]]),
+            command: row[4] < 0 ? "" : payload.commands[row[4]],
+            recovered: row[5] === 1,
+        }))
+        person.list.forEach(event => events.push(event))
+    })
+    events.sort((a, b) => a.at - b.at || a.userId.localeCompare(b.userId))
+
+    const pairEscrows = () => {
+        people.forEach(person => {
+            const held = new Map()
+            person.list.forEach(event => {
+                if (!/Escrow$|Refund$|Payout$/.test(event.reason)) return
+                const key = event.reason.replace(/Escrow$|Refund$|Payout$/, "")
+                const waiting = held.get(key) || []
+                held.set(key, waiting)
+                if (/Escrow$/.test(event.reason)) {
+                    waiting.push(event)
+                    return
+                }
+                const fresh = waiting.filter(open => event.at - open.at <= PAIR_WINDOW_MS)
+                const refunding = /Refund$/.test(event.reason)
+                const escrow = refunding
+                    ? fresh.reverse().find(open => -open.delta === event.delta)
+                    : fresh[fresh.length - 1]
+                if (escrow === undefined) {
+                    if (refunding) event.orphan = true
+                    return
+                }
+                waiting.splice(waiting.indexOf(escrow), 1)
+                escrow.settled = true
+                if (refunding) event.settled = true
+                else event.releases = -escrow.delta
+            })
+            held.forEach(waiting => waiting.forEach(open => { open.lost = true }))
+        })
+    }
+    pairEscrows()
+
+    const lostKey = event => (event.command || event.reason.replace(/Escrow$/, "")) + "Lost"
+    const lostLabel = event => readable(lostKey(event))
+    const liveFrom = events.reduce((first, event) =>
+        !event.recovered && (first === null || event.at < first) ? event.at : first, null)
+    const eraAt = events.some(event => event.recovered) ? liveFrom : null
+    const lostReasons = new Map()
+    events.forEach(event => { if (event.lost) lostReasons.set(event.reason, lostLabel(event)) })
+
+    const seriesFor = (person, skipSettled, skipRecovered) => {
+        let running = openingOf(person.rows)
+        let escrowed = 0
+        const points = []
+        person.list.forEach(event => {
+            running = event.shown === null ? running + event.delta : event.shown
+            if (skipRecovered && event.recovered) return
+            if (skipSettled && event.settled) {
+                escrowed -= event.delta
+                return
+            }
+            if (skipSettled && /Escrow$/.test(event.reason) && !event.lost) return
+            if (skipSettled && event.releases) escrowed -= event.releases
+            points.push({t: event.at, v: running + escrowed, reason: !skipSettled ? event.reason
+                : event.orphan ? "unrecorded" : event.lost ? lostKey(event) : event.reason})
+        })
+        return points
+    }
+
+    const aggregate = (skipSettled, skipRecovered) => {
+        const changes = []
+        people.forEach(person => {
+            let previous = openingOf(person.rows)
+            seriesFor(person, skipSettled, skipRecovered).forEach(point => {
+                changes.push({t: point.t, by: point.v - previous, reason: point.reason})
+                previous = point.v
+            })
+        })
+        changes.sort((a, b) => a.t - b.t)
+        let total = people.reduce((sum, person) => sum + openingOf(person.rows), 0)
+        let peak = total
+        let peakAt = changes.length ? changes[0].t : 0
+        const points = changes.map(change => {
+            total += change.by
+            if (total > peak) { peak = total; peakAt = change.t }
+            return {t: change.t, v: total, reason: change.reason}
+        })
+        return {points: points, peak: peak, peakAt: peakAt, last: total}
+    }
+
+    const serverTotals = aggregate(false, false)
+    const serverLine = {
+        id: "Server total",
+        points: serverTotals.points,
+        peak: serverTotals.peak,
+        peakAt: serverTotals.peakAt,
+        last: serverTotals.last,
+        from: serverTotals.points.length ? serverTotals.points[0].t : 0,
+        to: serverTotals.points.length ? serverTotals.points[serverTotals.points.length - 1].t : 0,
+    }
+
+    const state = {
+        mode: "top",
+        person: null,
+        range: null,
+        search: "",
+        reasons: new Set(),
+        hideAccrual: false,
+        hideSettled: true,
+        hideRecovered: false,
+        byReason: true,
+        sortBy: "now",
+        topCount: DEFAULT_TOP_COUNT,
+        topBy: "peak",
+        sort: {by: "when", dir: "asc"},
+        ranges: {},
+        periodViews: {},
+        period: null,
+        userSearch: "",
+        chosen: new Set(),
+        anchor: null,
+        filtered: events,
+    }
+
+    const number = value => value.toLocaleString("en-US")
+    const signed = value => (value > 0 ? "+" : "") + number(value)
+    const reasonOf = event => state.hideSettled && event.orphan ? "unrecorded" : event.reason
+    const labelOf = event => state.hideSettled && event.lost ? lostLabel(event) : labelFor(reasonOf(event))
+    const cause = text => "<span class='cause'>" + text + "</span>"
+    const toned = text => {
+        const tone = text.startsWith("+") ? "pos" : text.startsWith("-") ? "neg" : ""
+        return tone ? "<span class='" + tone + "'>" + text + "</span>" : text
+    }
+    const day = time => {
+        const when = new Date(time)
+        return when.getDate() + " " + MONTHS[when.getMonth()] + " " + when.getFullYear()
+    }
+    const ordinal = number => {
+        const teens = number % 100
+        return number + (teens >= 11 && teens <= 13 ? "th" : ORDINALS[number % 10] || "th")
+    }
+    const longDay = time => {
+        const when = new Date(time)
+        return MONTH_NAMES[when.getMonth()] + " " + ordinal(when.getDate()) + " " + when.getFullYear()
+    }
+    const between = (from, to) => longDay(from) + " - " + longDay(to)
+    const shortDay = time => {
+        const when = new Date(time)
+        return MONTHS[when.getMonth()] + " " + ordinal(when.getDate())
+    }
+    const rangeLabel = (from, to) => {
+        const start = new Date(from)
+        const end = new Date(to)
+        const sameYear = start.getFullYear() === end.getFullYear()
+        const sameMonth = sameYear && start.getMonth() === end.getMonth()
+        const sameDay = sameMonth && start.getDate() === end.getDate()
+
+        if (to - from < RANGE_TIMES_UNDER_MS) {
+            if (sameDay) return shortDay(from) + " " + start.getFullYear() + ", " + clock(from) + " - " + clock(to)
+            if (sameYear) return shortDay(from) + ", " + clock(from) + " - " + shortDay(to) + ", " + clock(to) + " " + end.getFullYear()
+            return shortDay(from) + " " + start.getFullYear() + ", " + clock(from) + " - " + shortDay(to) + " " + end.getFullYear() + ", " + clock(to)
+        }
+        if (to - from < RANGE_DAYS_UNDER_MS) {
+            if (sameYear) return shortDay(from) + " - " + shortDay(to) + " " + end.getFullYear()
+            return shortDay(from) + " " + start.getFullYear() + " - " + shortDay(to) + " " + end.getFullYear()
+        }
+        if (sameYear) return MONTHS[start.getMonth()] + " - " + MONTHS[end.getMonth()] + " " + end.getFullYear()
+        return MONTHS[start.getMonth()] + " " + start.getFullYear() + " - " + MONTHS[end.getMonth()] + " " + end.getFullYear()
+    }
+    const clock = time => {
+        const when = new Date(time)
+        return (when.getHours() % 12 || 12) + ":" + pad(when.getMinutes()) + (when.getHours() < 12 ? " AM" : " PM")
+    }
+    const stamp = time => longDay(time) + ", " + clock(time)
+    const stampCell = time => {
+        const when = new Date(time)
+        const hour = when.getHours() % 12 || 12
+        return "<span class='when'><span>" + MONTH_NAMES[when.getMonth()] + "</span>"
+            + "<span class='day'>" + ordinal(when.getDate()) + "</span>"
+            + "<span>" + when.getFullYear() + ",</span>"
+            + "<span>" + (hour < 10 ? " " : "") + hour + ":" + pad(when.getMinutes())
+            + (when.getHours() < 12 ? " AM" : " PM") + "</span></span>"
+    }
+
+    const drawMeta = () => {
+        const shown = viewOf(serverLine)
+        const users = people.filter(person => countOf(person) > 0).length
+        const live = Date.parse(payload.generatedAt)
+        document.getElementById("meta").innerHTML = divided([number(shown.count) + " events", users + " users"]
+            .concat(shown.count ? [longDay(shown.from) + " - " + stamp(live)] : []))
+    }
+
+    const peopleBox = document.getElementById("people")
+    const pinnedBox = document.getElementById("pinned")
+    const matchesUser = (person, needle) => !needle || [person.name, person.username, person.nickname, nameText(person)]
+        .some(value => value && String(value).toLowerCase().includes(needle))
+    const SORTS = {
+        now: (a, b) => lastOf(b) - lastOf(a),
+        peak: (a, b) => peakOf(b) - peakOf(a),
+        commands: (a, b) => viewOf(b).commands - viewOf(a).commands,
+        recent: (a, b) => viewOf(b).to - viewOf(a).to,
+    }
+    const TOP_CRITERIA = [
+        {value: "now", label: "Points Now", phrase: "points now"},
+        {value: "peak", label: "Peak Points", phrase: "peak points"},
+        {value: "recent", label: "Most Recent", phrase: "most recent activity"},
+        {value: "commands", label: "Most Commands", phrase: "most commands"},
+    ]
+    const topPhrase = () => (TOP_CRITERIA.find(criterion => criterion.value === state.topBy) || TOP_CRITERIA[1]).phrase
+    const options = (choices, chosen) => choices.map(choice => "<option value='" + choice.value + "'" + (String(choice.value) === String(chosen) ? " selected" : "")
+        + ">" + choice.label + "</option>").join("")
+    const drawPeople = () => {
+        const top = topMembers()
+        const medals = new Map()
+        people.slice().sort(SORTS.now).slice(0, MEDALS.length)
+            .forEach((person, place) => medals.set(person, MEDALS[place]))
+        const needle = state.userSearch.trim().toLowerCase()
+        const ordered = people.slice().sort(SORTS[state.sortBy] || SORTS.now).filter(person => matchesUser(person, needle))
+        pinnedBox.innerHTML = ""
+        peopleBox.innerHTML = ""
+        const leaders = document.createElement("div")
+        leaders.className = state.mode === "top" ? "leaders on" : "leaders"
+        leaders.tabIndex = 0
+        leaders.setAttribute("role", "button")
+        leaders.innerHTML = "<div class='who'><span>Top<span class='counter'>"
+            + "<input type='number' id='topCount' min='1' max='" + people.length + "' step='1' value='" + state.topCount + "'>"
+            + "<span class='steps'><button type='button' class='step up' data-step='1'></button>"
+            + "<button type='button' class='step down' data-step='-1'></button></span>"
+            + "</span></span><span class='meta'>"
+            + number(top.reduce((sum, person) => sum + tallyOf(person), 0)) + "</span></div>"
+            + "<div class='meta'>by<select id='topBy'>" + options(TOP_CRITERIA, state.topBy) + "</select></div>"
+        leaders.onclick = event => {
+            if (!event.target.closest("select, input, .step")) pick(null)
+        }
+        leaders.onkeydown = event => {
+            if (event.target === leaders && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault()
+                pick(null)
+            }
+        }
+        const chooseTop = () => state.mode === "top" ? redraw() : pick(null)
+        const countBox = leaders.querySelector("#topCount")
+        const applyCount = wanted => {
+            state.topCount = Math.min(people.length, Math.max(1, wanted))
+            countBox.value = state.topCount
+            chooseTop()
+        }
+        countBox.onchange = () => {
+            const wanted = Math.round(Number(countBox.value))
+            applyCount(wanted > 0 ? wanted : DEFAULT_TOP_COUNT)
+        }
+        leaders.querySelectorAll(".step").forEach(step => {
+            step.onclick = event => {
+                event.stopPropagation()
+                applyCount(state.topCount + Number(step.dataset.step))
+            }
+        })
+        countBox.onkeydown = event => {
+            if (event.key === "Enter") countBox.blur()
+            event.stopPropagation()
+        }
+        leaders.querySelector("#topBy").onchange = event => {
+            state.topBy = event.target.value
+            chooseTop()
+        }
+        const everyone = document.createElement("button")
+        everyone.className = state.mode === "everyone" ? "on" : ""
+        everyone.innerHTML = "<div class='who'><span>Everyone</span><span class='meta'>"
+            + number(people.reduce((sum, person) => sum + tallyOf(person), 0)) + "</span></div>"
+            + "<div class='meta'>All " + people.length + " members side by side</div>"
+        everyone.onclick = () => showEveryone()
+        const server = document.createElement("button")
+        server.className = state.mode === "server" ? "on" : ""
+        server.innerHTML = "<div class='who'><span>Server</span><span class='meta'>" + number(lastOf(serverLine)) + "</span></div>"
+            + "<div class='meta'>Everyone added together</div>"
+        server.onclick = () => showServer()
+        pinnedBox.append(server, everyone, leaders)
+        ordered.forEach(person => {
+            const button = document.createElement("button")
+            button.className = [state.chosen.has(person) ? "on" : "", medals.get(person) || ""].filter(Boolean).join(" ")
+            const account = !departed(person) && person.username !== person.name ? "<span class='faint account'>(" + escape(person.username) + ")</span>" : ""
+            button.innerHTML = "<div class='who'><span>" + nameHtml(person) + account + "</span><span class='meta'>" + number(tallyOf(person)) + "</span></div>"
+                + "<div class='meta standing'><i>Now</i><b>" + number(lastOf(person)) + "</b><i class='split'>Peak</i><b>" + number(peakOf(person)) + "</b></div>"
+            button.onclick = event => {
+                if (event.ctrlKey || event.metaKey) toggleChosen(person)
+                else if (event.shiftKey) extendChosen(person, ordered)
+                else pick(person)
+            }
+            peopleBox.appendChild(button)
+        })
+        const selection = document.getElementById("selection")
+        if (state.chosen.size > 1) {
+            selection.innerHTML = "<span>" + state.chosen.size + " members selected</span><button type='button' id='clearChosen'>Clear</button>"
+            selection.querySelector("#clearChosen").onclick = () => pick(null)
+        } else {
+            selection.innerHTML = "<span>Ctrl-click to add or remove, Shift-click for a range</span>"
+        }
+        peopleBox.style.removeProperty("--now-width")
+        peopleBox.style.removeProperty("--peak-width")
+        const widest = selector => Math.ceil(Math.max(0, ...Array.from(peopleBox.querySelectorAll(selector))
+            .map(cell => cell.getBoundingClientRect().width)))
+        const nowWidth = widest(".standing > b:nth-of-type(1)")
+        const peakWidth = widest(".standing > b:nth-of-type(2)")
+        peopleBox.style.setProperty("--now-width", nowWidth + "px")
+        peopleBox.style.setProperty("--peak-width", peakWidth + "px")
+    }
+
+    const redraw = () => {
+        drawMeta()
+        drawPeople()
+        drawActiveView()
+    }
+
+    const chosenMembers = () => people.filter(person => state.chosen.has(person))
+    const chosenTitle = () => {
+        const chosen = chosenMembers()
+        return chosen.length <= 3 ? chosen.map(nameHtml).join(", ") : chosen.length + " selected members"
+    }
+    const applyChoice = () => {
+        const chosen = chosenMembers()
+        state.mode = chosen.length === 0 ? "top" : chosen.length === 1 ? "person" : "some"
+        state.person = chosen.length === 1 ? chosen[0] : null
+        state.range = null
+        state.ranges = {}
+        redraw()
+    }
+
+    const pick = person => {
+        state.chosen = person === null ? new Set() : new Set([person])
+        state.anchor = person
+        applyChoice()
+    }
+    const toggleChosen = person => {
+        if (state.chosen.has(person)) state.chosen.delete(person)
+        else state.chosen.add(person)
+        state.anchor = person
+        applyChoice()
+    }
+    const extendChosen = (person, ordered) => {
+        if (state.anchor === null || !ordered.includes(state.anchor)) {
+            pick(person)
+            return
+        }
+        const from = ordered.indexOf(state.anchor)
+        const to = ordered.indexOf(person)
+        ordered.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(member => state.chosen.add(member))
+        applyChoice()
+    }
+
+    const showServer = () => {
+        state.mode = "server"
+        state.person = null
+        state.chosen = new Set()
+        state.range = null
+        state.ranges = {}
+        redraw()
+    }
+    const showEveryone = () => {
+        state.mode = "everyone"
+        state.person = null
+        state.chosen = new Set()
+        state.range = null
+        state.ranges = {}
+        redraw()
+    }
+
+    const topMembers = () => people.slice().sort(SORTS[state.topBy] || SORTS.peak)
+        .filter(person => countOf(person) > 0).slice(0, state.topCount)
+
+    const inGroup = () => state.mode === "top" || state.mode === "everyone" || state.mode === "some"
+    const isHidden = event => (state.hideRecovered && event.recovered)
+        || (state.hideSettled && (event.settled || (/Escrow$/.test(event.reason) && !event.lost)))
+    const shownAmount = event => state.hideSettled && event.releases ? event.delta - event.releases : event.delta
+    const views = new Map()
+    const viewKey = () => (state.hideSettled ? "s" : "-") + (state.hideRecovered ? "r" : "-")
+    const viewOf = person => {
+        const key = viewKey()
+        let byKey = views.get(person)
+        if (byKey === undefined) { byKey = {}; views.set(person, byKey) }
+        if (byKey[key] === undefined) {
+            if (person === serverLine) {
+                const totals = aggregate(state.hideSettled, state.hideRecovered)
+                byKey[key] = {points: totals.points, peak: totals.peak, peakAt: totals.peakAt,
+                    last: totals.last, commands: 0, tally: 0}
+            } else {
+                const points = seriesFor(person, state.hideSettled, state.hideRecovered)
+                let peak = 0
+                let peakAt = 0
+                points.forEach(point => { if (point.v > peak) { peak = point.v; peakAt = point.t } })
+                byKey[key] = {points: points, peak: peak, peakAt: peakAt,
+                    last: points.length ? points[points.length - 1].v : openingOf(person.rows),
+                    commands: person.list.filter(event => !isHidden(event) && event.command).length,
+                    tally: person.list.filter(event => !isHidden(event) && !QUIET.has(reasonOf(event))).length}
+            }
+            const view = byKey[key]
+            view.count = view.points.length
+            view.from = view.count ? view.points[0].t : 0
+            view.to = view.count ? view.points[view.count - 1].t : 0
+        }
+        return byKey[key]
+    }
+    const peakOf = person => viewOf(person).peak
+    const peakAtOf = person => viewOf(person).peakAt
+    const countOf = person => viewOf(person).count
+    const tallyOf = person => viewOf(person).tally
+    const lastOf = person => viewOf(person).last
+
+    const drawStats = () => {
+        const box = document.getElementById("stats")
+        const shown = viewOf(serverLine)
+        const mineKeys = new Set(chosenMembers().map(person => person.key))
+        const counted = state.person ? events.filter(event => event.userId === state.person.key)
+            : state.mode === "some" ? events.filter(event => mineKeys.has(event.userId))
+            : events
+        const mine = counted.filter(event => !isHidden(event) && event.reason !== "openingBalance")
+            .map(event => ({event: event, amount: shownAmount(event)}))
+        const wins = mine.filter(entry => entry.amount > 0)
+        const losses = mine.filter(entry => entry.amount < 0)
+        const best = wins.reduce((top, entry) => !top || entry.amount > top.amount ? entry : top, null)
+        const worst = losses.reduce((low, entry) => !low || entry.amount < low.amount ? entry : low, null)
+        const serverStats = [
+            ["Now", number(lastOf(serverLine))],
+            ["Peak held", number(peakOf(serverLine)) + " <span class='faint'>&nbsp;" + day(peakAtOf(serverLine)) + "</span>"],
+            ["Events", number(shown.count)],
+            ["Total gained", toned(signed(wins.reduce((sum, entry) => sum + entry.amount, 0)))],
+            ["Total lost", toned(signed(losses.reduce((sum, entry) => sum + entry.amount, 0)))],
+            ["Users", number(people.length)],
+        ]
+        const stats = state.mode === "server" ? serverStats : state.person
+            ? [
+                ["Now", number(lastOf(state.person))],
+                ["Peak", number(peakOf(state.person)) + (peakOf(state.person) ? " <span class='faint'>&nbsp;" + day(peakAtOf(state.person)) + "</span>" : "")],
+                ["Events", number(countOf(state.person))],
+                ["Biggest gain", best ? toned(signed(best.amount)) + cause(labelOf(best.event)) : "none"],
+                ["Biggest loss", worst ? toned(signed(worst.amount)) + cause(labelOf(worst.event)) : "none"],
+                ["Active", countOf(state.person) ? between(viewOf(state.person).from, viewOf(state.person).to) : "never"],
+            ]
+            : state.mode === "some"
+            ? [
+                ["Members", number(state.chosen.size)],
+                ["Events", number(mine.length)],
+                ["Now", number(chosenMembers().reduce((sum, person) => sum + lastOf(person), 0))],
+                ["Biggest gain", best ? toned(signed(best.amount)) + cause(who(best.event)) : "none"],
+                ["Biggest loss", worst ? toned(signed(worst.amount)) + cause(who(worst.event)) : "none"],
+                ["Span", mine.length ? between(mine.reduce((first, entry) => Math.min(first, entry.event.at), Infinity),
+                    mine.reduce((last, entry) => Math.max(last, entry.event.at), 0)) : "nothing shown"],
+            ]
+            : [
+                ["Users", number(people.filter(person => countOf(person) > 0).length)],
+                ["Events", number(shown.count)],
+                ["Now", number(people.reduce((sum, person) => sum + lastOf(person), 0))],
+                ["Biggest gain", best ? toned(signed(best.amount)) + cause(who(best.event)) : "none"],
+                ["Biggest loss", worst ? toned(signed(worst.amount)) + cause(who(worst.event)) : "none"],
+                ["Span", shown.count ? between(shown.from, shown.to) : "nothing shown"],
+            ]
+        box.innerHTML = stats.map(([label, value]) => "<div class='stat'><b>" + value + "</b><span>" + label + "</span></div>").join("")
+    }
+
+    const niceStep = (range, wanted) => {
+        const raw = range / Math.max(1, wanted)
+        const power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9))))
+        return [1, 2, 5, 10].map(size => size * power).find(size => size >= raw) || power * 10
+    }
+
+    const short = value => {
+        const size = Math.abs(value)
+        if (size >= 1e6) return (Math.round(value / 1e5) / 10) + "M"
+        if (size >= 1e3) return (Math.round(value / 1e2) / 10) + "K"
+        return String(Math.round(value))
+    }
+
+    const timeTicks = (from, to, wanted) => {
+        const second = 1000
+        const minute = 60000
+        const hour = 3600000
+        const dayLong = 86400000
+        const plans = [
+            {size: second, unit: "clock"}, {size: 5 * second, unit: "clock"}, {size: 15 * second, unit: "clock"}, {size: 30 * second, unit: "clock"},
+            {size: minute, unit: "clock"}, {size: 5 * minute, unit: "clock"}, {size: 15 * minute, unit: "clock"}, {size: 30 * minute, unit: "clock"},
+            {size: hour, unit: "clock"}, {size: 3 * hour, unit: "clock"}, {size: 6 * hour, unit: "clock"}, {size: 12 * hour, unit: "clock"},
+            {size: dayLong, unit: "day"}, {size: 2 * dayLong, unit: "day"}, {size: 7 * dayLong, unit: "day"}, {size: 14 * dayLong, unit: "day"},
+            {size: 1, unit: "month"}, {size: 3, unit: "month"}, {size: 6, unit: "month"},
+            {size: 1, unit: "year"}, {size: 2, unit: "year"}, {size: 5, unit: "year"}, {size: 10, unit: "year"},
+        ]
+        const lengthOf = plan => plan.unit === "month" ? plan.size * MONTH_MS : plan.unit === "year" ? plan.size * YEAR_MS : plan.size
+        const span = Math.max(1000, to - from)
+        const plan = plans.find(entry => span / lengthOf(entry) <= wanted) || plans[plans.length - 1]
+        const ticks = []
+
+        if (plan.unit === "month" || plan.unit === "year") {
+            const start = new Date(from)
+            let year = plan.unit === "year" ? Math.floor(start.getFullYear() / plan.size) * plan.size : start.getFullYear()
+            let month = plan.unit === "year" ? 0 : Math.floor(start.getMonth() / plan.size) * plan.size
+            while (new Date(year, month, 1).getTime() <= to) {
+                const at = new Date(year, month, 1).getTime()
+                if (at >= from) ticks.push({at: at, label: plan.unit === "year" ? String(year) : MONTHS[month] + " " + year})
+                if (plan.unit === "year") {
+                    year += plan.size
+                } else {
+                    month += plan.size
+                    while (month > 11) { month -= 12; year++ }
+                }
+            }
+            return {ticks: ticks}
+        }
+
+        const label = when => {
+            const midnight = when.getHours() === 0 && when.getMinutes() === 0 && when.getSeconds() === 0
+            if (plan.unit === "day" || (midnight && plan.size >= 60000)) {
+                return MONTHS[when.getMonth()] + " " + ordinal(when.getDate())
+            }
+            if (plan.size < 60000) {
+                return (when.getHours() % 12 || 12) + ":" + pad(when.getMinutes()) + ":" + pad(when.getSeconds())
+                    + (when.getHours() < 12 ? " AM" : " PM")
+            }
+            return clock(when.getTime())
+        }
+
+        if (plan.size >= 3600000) {
+            const walker = new Date(from)
+            walker.setHours(0, 0, 0, 0)
+            const stepHours = plan.size / 3600000
+            while (walker.getTime() < from) walker.setHours(walker.getHours() + stepHours)
+            while (walker.getTime() <= to) {
+                ticks.push({at: walker.getTime(), label: label(walker)})
+                walker.setHours(walker.getHours() + stepHours)
+            }
+            return {ticks: ticks}
+        }
+
+        for (let at = Math.ceil(from / plan.size) * plan.size; at <= to; at += plan.size) {
+            ticks.push({at: at, label: label(new Date(at))})
+        }
+        return {ticks: ticks}
+    }
+
+    const chart = document.getElementById("chart")
+    const tip = document.getElementById("tip")
+    const seriesOf = person => viewOf(person).points
+    const shownUsers = () => state.mode === "person" ? [state.person]
+        : state.mode === "server" ? [serverLine]
+        : state.mode === "everyone" ? people
+        : state.mode === "some" ? chosenMembers()
+        : topMembers()
+
+    let panning = null
+    let pinching = null
+    let heldScale = null
+    let extent = null
+    let wheelTimer = null
+    const pointers = new Map()
+    const presetButtons = Array.from(document.querySelectorAll("[data-preset]"))
+
+    const drawChart = () => {
+        const wrap = chart.parentElement
+        const width = wrap.clientWidth || chart.clientWidth || 900
+        const height = wrap.clientHeight || chart.clientHeight || 440
+        const padLeft = 64
+        const padBottom = 24
+        const padTop = 12
+        const colouring = state.byReason && !inGroup()
+        document.getElementById("reasonSwitch").style.display = inGroup() ? "none" : "inline-flex"
+        const lines = shownUsers().filter(person => seriesOf(person).length > 1)
+        document.getElementById("chartTitle").innerHTML = state.mode === "person" ? who(state.person)
+            : state.mode === "server" ? "Server Points"
+            : state.mode === "everyone" ? "Everyone"
+            : state.mode === "some" ? chosenTitle()
+            : "Top " + topMembers().length + " by " + topPhrase()
+        if (lines.length === 0) {
+            chart.innerHTML = "<text x='16' y='28' class='axis'>Nothing to draw</text>"
+            document.getElementById("legend").innerHTML = ""
+            document.getElementById("chartContext").textContent = ""
+            return
+        }
+        const whole = [
+            Math.min.apply(null, lines.map(person => viewOf(person).from)),
+            Math.max.apply(null, lines.map(person => viewOf(person).to)),
+        ]
+        const span = state.range || whole
+        extent = whole
+        presetButtons.forEach(button => {
+            const length = PRESETS[button.dataset.preset]
+            const on = length === null
+                ? state.range === null
+                : state.range !== null && length < whole[1] - whole[0]
+                    && Math.abs(state.range[1] - whole[1]) < PRESET_TOLERANCE_MS
+                    && Math.abs(state.range[1] - state.range[0] - length) < PRESET_TOLERANCE_MS
+            button.className = on ? "tool on" : "tool"
+        })
+        const zoom = Math.min(1, (span[1] - span[0]) / Math.max(1, whole[1] - whole[0]))
+        const dotRadius = 1.8 + 1.0 * (1 - zoom)
+        const windowed = points => {
+            const before = points.filter(point => point.t < span[0]).length
+            const after = points.findIndex(point => point.t > span[1])
+            return points.slice(Math.max(0, before - 1), after === -1 ? points.length : after + 1)
+        }
+        const visible = lines.map(person => windowed(seriesOf(person)))
+        const framed = visible.map(points => points.filter(point => point.t >= span[0] && point.t <= span[1])).flat()
+        const scaled = framed.length ? framed : visible.flat()
+        let low = 0
+        let high = 1
+        scaled.forEach(point => {
+            if (point.v < low) low = point.v
+            if (point.v > high) high = point.v
+        })
+        const headroom = Math.max(1, high - low) * 0.05
+        high += headroom
+        low = low < 0 ? low - headroom : Math.max(0, low - headroom)
+        const toX = time => padLeft + (time - span[0]) / Math.max(1, span[1] - span[0]) * (width - padLeft - 10)
+        const yLines = Math.max(4, Math.round((height - padBottom - padTop) / 70))
+        const step = heldScale ? heldScale.step : niceStep(Math.max(1, high - low), yLines)
+        const bottom = heldScale ? heldScale.bottom : Math.floor(low / step) * step
+        const top = heldScale ? heldScale.top : Math.max(bottom + step, Math.ceil(high / step) * step)
+        const toY = value => height - padBottom - (value - bottom) / (top - bottom) * (height - padBottom - padTop)
+
+        const ticks = []
+        for (let value = bottom; value <= top + step / 2; value += step) {
+            const y = toY(value).toFixed(1)
+            ticks.push("<line class='grid' x1='" + padLeft + "' x2='" + width + "' y1='" + y + "' y2='" + y + "'></line>"
+                + "<text class='axis' text-anchor='end' x='" + (padLeft - 8) + "' y='" + (toY(value) + 3.5).toFixed(1) + "'>" + short(value) + "</text>")
+        }
+        const axis = timeTicks(span[0], span[1], Math.max(3, Math.round((width - padLeft) / 130)))
+        document.getElementById("chartContext").textContent = state.range === null ? "" : rangeLabel(span[0], span[1])
+        axis.ticks.forEach(tick => {
+            const x = toX(tick.at).toFixed(1)
+            ticks.push("<line class='vgrid' x1='" + x + "' x2='" + x + "' y1='" + padTop + "' y2='" + (height - padBottom) + "'></line>"
+                + "<text class='axis' text-anchor='middle' x='" + x + "' y='" + (height - 6) + "'>" + tick.label + "</text>")
+        })
+
+        const paths = visible.map((points, index) => {
+            if (points.length === 0) return ""
+            const colour = PALETTE[index % PALETTE.length]
+            if (colouring) {
+                const strokes = new Map()
+                for (let step = 1; step < points.length; step++) {
+                    const key = colourKey(points[step].reason || "unrecorded")
+                    strokes.set(key, (strokes.get(key) || "")
+                        + "M" + toX(points[step - 1].t).toFixed(1) + " " + toY(points[step - 1].v).toFixed(1)
+                        + "L" + toX(points[step].t).toFixed(1) + " " + toY(points[step].v).toFixed(1))
+                }
+                const placed = new Set()
+                const circles = new Map()
+                points.forEach(point => {
+                    if (point.t < span[0] || point.t > span[1]) return
+                    const cx = toX(point.t)
+                    const cy = toY(point.v)
+                    const spot = Math.round(cx) + "|" + Math.round(cy)
+                    if (placed.has(spot)) return
+                    placed.add(spot)
+                    const key = colourKey(point.reason || "unrecorded")
+                    circles.set(key, (circles.get(key) || "")
+                        + "<circle cx='" + cx.toFixed(1) + "' cy='" + cy.toFixed(1) + "' r='" + dotRadius.toFixed(1) + "'></circle>")
+                })
+                return Array.from(strokes.entries())
+                    .map(([reason, drawn]) => "<path d='" + drawn + "' fill='none' stroke='" + colourFor(reason) + "' stroke-width='1.8' stroke-linejoin='round'></path>")
+                    .join("")
+                    + Array.from(circles.entries()).map(([reason, shapes]) => "<g fill='" + colourFor(reason) + "'>" + shapes + "</g>").join("")
+            }
+            const d = points.map((point, at) => (at ? "L" : "M") + toX(point.t).toFixed(1) + " " + toY(point.v).toFixed(1)).join(" ")
+            const taken = new Set()
+            const dots = []
+            points.forEach(point => {
+                const cx = toX(point.t)
+                const cy = toY(point.v)
+                const spot = Math.round(cx) + "|" + Math.round(cy)
+                if (taken.has(spot)) return
+                taken.add(spot)
+                dots.push("<circle cx='" + cx.toFixed(1) + "' cy='" + cy.toFixed(1) + "' r='" + dotRadius.toFixed(1) + "' fill='" + colour + "'></circle>")
+            })
+            return "<path d='" + d + "' fill='none' stroke='" + colour + "' stroke-width='" + (inGroup() ? 1.2 : 1.8) + "' stroke-linejoin='round'></path>" + dots.join("")
+        })
+        chart.style.height = height + "px"
+        chart.setAttribute("viewBox", "0 0 " + width + " " + height)
+        const marker = eraAt === null || state.hideRecovered || eraAt < span[0] || eraAt > span[1] ? ""
+            : "<line class='era' x1='" + toX(eraAt).toFixed(1) + "' x2='" + toX(eraAt).toFixed(1)
+                + "' y1='" + padTop + "' y2='" + (height - padBottom) + "'></line>"
+                + "<text class='eraLabel' text-anchor='end' x='" + (toX(eraAt) - 4).toFixed(1) + "' y='" + (padTop + 10) + "'>BCE</text>"
+        chart.innerHTML = "<defs><clipPath id='plot'><rect x='" + padLeft + "' y='" + padTop + "' width='" + Math.max(0, width - padLeft)
+            + "' height='" + Math.max(0, height - padBottom - padTop) + "'></rect></clipPath></defs>"
+            + ticks.join("")
+            + marker
+            + "<rect id='band' y='" + padTop + "' height='" + (height - padBottom - padTop) + "' fill='" + PALETTE[0] + "' opacity='0.2' style='display:none'></rect>"
+            + "<g clip-path='url(#plot)'>" + paths.join("") + "</g>"
+            + "<line id='hair' class='grid' y1='" + padTop + "' y2='" + (height - padBottom) + "' style='opacity:0'></line>"
+        document.getElementById("legend").innerHTML = colouring
+            ? Array.from(new Set(visible.flat().map(point => colourKey(point.reason)).filter(Boolean)))
+                .sort((a, b) => colourRank(a) - colourRank(b) || a.localeCompare(b))
+                .filter(reason => !UNCODED.has(reason))
+                .map(reason => "<span><i style='background:" + colourFor(reason) + "'></i>" + labelFor(reason) + "</span>").join("")
+            : lines.map((person, index) =>
+                "<span><i style='background:" + PALETTE[index % PALETTE.length] + "'></i>" + who(person) + "</span>").join("")
+
+        const svgX = clientX => {
+            const box = chart.getBoundingClientRect()
+            return (clientX - box.left) / box.width * width
+        }
+        const timeAt = clientX => span[0] + (svgX(clientX) - padLeft) / Math.max(1, width - padLeft - 10) * (span[1] - span[0])
+        const band = () => document.getElementById("band")
+        let dragFrom = null
+
+        const hideBand = () => {
+            dragFrom = null
+            const rect = band()
+            if (rect) rect.style.display = "none"
+        }
+
+        const place = (from, length) => {
+            if (length >= whole[1] - whole[0]) return null
+            if (from < whole[0]) from = whole[0]
+            if (from + length > whole[1]) from = whole[1] - length
+            return [from, from + length]
+        }
+
+        const hideTip = () => {
+            tip.style.opacity = "0"
+            const hair = document.getElementById("hair")
+            if (hair) hair.style.opacity = "0"
+        }
+
+        const showTip = clientX => {
+            const box = chart.getBoundingClientRect()
+            const time = timeAt(clientX)
+            const near = visible.map((points, index) => {
+                let best = null
+                points.forEach(point => { if (!best || Math.abs(point.t - time) < Math.abs(best.t - time)) best = point })
+                return best ? {person: lines[index], point: best} : null
+            }).filter(Boolean).sort((a, b) => Math.abs(a.point.t - time) - Math.abs(b.point.t - time))[0]
+            const hair = document.getElementById("hair")
+            if (!near) return
+            hair.setAttribute("x1", toX(near.point.t))
+            hair.setAttribute("x2", toX(near.point.t))
+            hair.style.opacity = "1"
+            tip.innerHTML = "<b>" + number(near.point.v) + "</b><br>" + stamp(near.point.t) + (inGroup() ? "<br>" + who(near.person) : "")
+            tip.style.opacity = "1"
+            const room = 4
+            const wanted = {
+                left: (toX(near.point.t) / width) * box.width + 10,
+                top: (toY(near.point.v) / height) * box.height,
+            }
+            tip.style.left = Math.max(room, Math.min(box.width - tip.offsetWidth - room, wanted.left)) + "px"
+            tip.style.top = Math.max(room, Math.min(box.height - tip.offsetHeight - room, wanted.top)) + "px"
+        }
+
+        chart.onpointerdown = down => {
+            if (down.pointerType === "mouse" && down.button !== 0) return
+            chart.setPointerCapture(down.pointerId)
+            pointers.set(down.pointerId, {x: down.clientX, y: down.clientY})
+
+            if (pointers.size === 2) {
+                const [a, b] = Array.from(pointers.values())
+                const focus = timeAt((a.x + b.x) / 2)
+                panning = null
+                heldScale = null
+                chart.style.cursor = ""
+                pinching = {
+                    distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+                    focus: focus,
+                    ratio: (focus - span[0]) / Math.max(1, span[1] - span[0]),
+                    length: span[1] - span[0],
+                }
+                hideTip()
+                return
+            }
+            if (pointers.size > 2) return
+
+            if (down.shiftKey) {
+                dragFrom = {x: svgX(down.clientX), at: timeAt(down.clientX)}
+                const rect = band()
+                rect.setAttribute("x", dragFrom.x)
+                rect.setAttribute("width", "0")
+                rect.style.display = ""
+                return
+            }
+            panning = {clientX: down.clientX, from: span[0], length: span[1] - span[0], moved: false}
+        }
+
+        chart.onpointermove = move => {
+            if (pointers.has(move.pointerId)) pointers.set(move.pointerId, {x: move.clientX, y: move.clientY})
+
+            if (pinching !== null) {
+                if (pointers.size < 2) return
+                const [a, b] = Array.from(pointers.values())
+                const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+                const length = Math.min(whole[1] - whole[0],
+                    Math.max(MIN_SPAN_MS, pinching.length * pinching.distance / distance))
+                state.range = place(pinching.focus - pinching.ratio * length, length)
+                drawChart()
+                return
+            }
+
+            if (panning !== null) {
+                if (!panning.moved) {
+                    if (Math.abs(move.clientX - panning.clientX) <= TAP_SLOP_PX) return
+                    panning.moved = true
+                    heldScale = {step: step, bottom: bottom, top: top}
+                    chart.style.cursor = "grabbing"
+                    hideTip()
+                }
+                const perPixel = panning.length / Math.max(1, width - padLeft - 10)
+                state.range = place(panning.from + (panning.clientX - move.clientX) * perPixel, panning.length)
+                drawChart()
+                return
+            }
+
+            if (dragFrom !== null) {
+                const x = svgX(move.clientX)
+                const rect = band()
+                rect.setAttribute("x", Math.min(x, dragFrom.x))
+                rect.setAttribute("width", Math.abs(x - dragFrom.x))
+            }
+            if (move.pointerType === "mouse") showTip(move.clientX)
+        }
+
+        const release = up => {
+            pointers.delete(up.pointerId)
+
+            if (pinching !== null) {
+                if (pointers.size < 2) {
+                    pinching = null
+                    applyFilters()
+                }
+                return
+            }
+
+            if (panning !== null) {
+                const moved = panning.moved
+                panning = null
+                heldScale = null
+                chart.style.cursor = ""
+                if (moved) applyFilters()
+                else if (up.pointerType !== "mouse" && up.type === "pointerup") showTip(up.clientX)
+                return
+            }
+
+            if (dragFrom === null) return
+            const from = Math.min(dragFrom.at, timeAt(up.clientX))
+            const to = Math.max(dragFrom.at, timeAt(up.clientX))
+            hideBand()
+            if (to - from < MIN_SPAN_MS) return
+            state.range = [from, to]
+            drawChart()
+            applyFilters()
+        }
+        chart.onpointerup = release
+        chart.onpointercancel = release
+
+        chart.onpointerleave = leave => {
+            if (leave.pointerType === "mouse" && panning === null && pinching === null) hideTip()
+        }
+
+        chart.onwheel = wheel => {
+            wheel.preventDefault()
+            const unit = wheel.deltaMode === 1 ? LINE_PX : wheel.deltaMode === 2 ? height : 1
+            const sideways = wheel.shiftKey && !wheel.deltaX
+            const across = (sideways ? wheel.deltaY : wheel.deltaX) * unit
+            const along = (sideways ? 0 : wheel.deltaY) * unit
+            const length = span[1] - span[0]
+
+            if (Math.abs(across) > Math.abs(along)) {
+                if (heldScale === null) heldScale = {step: step, bottom: bottom, top: top}
+                state.range = place(span[0] + across * length / Math.max(1, width - padLeft - 10), length)
+            } else {
+                heldScale = null
+                const speed = wheel.ctrlKey ? PINCH_ZOOM_SPEED : ZOOM_SPEED
+                const change = Math.max(-MAX_ZOOM_PER_EVENT, Math.min(MAX_ZOOM_PER_EVENT, along * speed))
+                const next = Math.min(whole[1] - whole[0], Math.max(MIN_SPAN_MS, length * Math.exp(change)))
+                const focus = Math.min(span[1], Math.max(span[0], timeAt(wheel.clientX)))
+                state.range = place(focus - (focus - span[0]) / Math.max(1, length) * next, next)
+            }
+
+            hideBand()
+            hideTip()
+            drawChart()
+            clearTimeout(wheelTimer)
+            wheelTimer = setTimeout(() => {
+                if (panning === null) heldScale = null
+                applyFilters()
+            }, WHEEL_SETTLE_MS)
+        }
+    }
+
+    document.getElementById("userSearch").oninput = event => { state.userSearch = event.target.value; drawPeople() }
+    document.getElementById("sortBy").onchange = event => { state.sortBy = event.target.value; drawPeople() }
+    const showEverything = () => {
+        heldScale = null
+        state.range = null
+        drawChart()
+        applyFilters()
+    }
+    chart.ondblclick = showEverything
+    presetButtons.forEach(button => {
+        button.onclick = () => {
+            const length = PRESETS[button.dataset.preset]
+            heldScale = null
+            state.range = length === null || extent === null || length >= extent[1] - extent[0]
+                ? null : [extent[1] - length, extent[1]]
+            drawChart()
+            applyFilters()
+        }
+    })
+    window.addEventListener("resize", drawChart)
+    new ResizeObserver(drawChart).observe(document.querySelector(".chartWrap"))
+
+    const reasonsBox = document.getElementById("reasons")
+    const reasonChips = new Map()
+    payload.reasons.slice().filter(reason => !UNCODED.has(reason))
+        .sort((a, b) => colourRank(colourKey(a)) - colourRank(colourKey(b))
+            || stageRank(a) - stageRank(b) || a.localeCompare(b))
+        .forEach(reason => {
+        const chip = document.createElement("span")
+        chip.className = "chip"
+        chip.textContent = labelFor(reason)
+        chip.onclick = () => {
+            if (state.reasons.has(reason)) state.reasons.delete(reason)
+            else state.reasons.add(reason)
+            chip.className = state.reasons.has(reason) ? "chip on" : "chip"
+            applyFilters()
+        }
+        reasonChips.set(reason, chip)
+        reasonsBox.appendChild(chip)
+    })
+
+    const refreshChips = () => {
+        reasonChips.forEach((chip, reason) => {
+            const gone = state.hideSettled
+                && (/Refund$/.test(reason) || (/Escrow$/.test(reason) && !lostReasons.has(reason)))
+            chip.style.display = gone ? "none" : ""
+            chip.textContent = state.hideSettled && lostReasons.has(reason) ? lostReasons.get(reason) : labelFor(reason)
+            if (gone && state.reasons.has(reason)) {
+                state.reasons.delete(reason)
+                chip.className = "chip"
+            }
+        })
+    }
+    document.getElementById("clearReasons").onclick = () => {
+        state.reasons.clear()
+        Array.from(reasonsBox.children).forEach(chip => { chip.className = "chip" })
+        applyFilters()
+    }
+    document.getElementById("search").oninput = field => { state.search = field.target.value.trim().toLowerCase(); applyFilters() }
+    document.getElementById("hideAccrual").onclick = event => {
+        state.hideAccrual = !state.hideAccrual
+        event.target.className = state.hideAccrual ? "chip on" : "chip"
+        applyFilters()
+    }
+    document.getElementById("colourByReason").onchange = event => {
+        state.byReason = event.target.checked
+        drawChart()
+    }
+    document.querySelectorAll(".help").forEach(icon => { icon.onclick = event => event.preventDefault() })
+    const setHiding = (setting, hiding) => {
+        state[setting] = hiding
+        luckTracks.clear()
+        if (setting === "hideRecovered") {
+            state.ranges = {}
+            const span = periodSpanOf()
+            if (state.period && (span === null || state.period[1] < span[0] || state.period[0] > span[1])) state.period = null
+        }
+        refreshChips()
+        redraw()
+    }
+    document.getElementById("hideSettled").onchange = event => setHiding("hideSettled", event.target.checked)
+    document.getElementById("hideRecovered").onchange = event => setHiding("hideRecovered", event.target.checked)
+    const ROW_SORTS = {
+        when: event => event.at,
+        amount: event => event.delta,
+        balance: event => event.balance,
+    }
+    const sortHeads = Array.from(document.querySelectorAll(".sortable"))
+    const refreshSortHeads = () => {
+        sortHeads.forEach(head => {
+            const active = head.dataset.sort === state.sort.by
+            head.className = active ? "sortable on" : "sortable"
+            head.querySelector("i").textContent = !active ? "○"
+                : state.sort.dir === "asc" ? "▲" : "▼"
+        })
+    }
+    sortHeads.forEach(head => {
+        head.onclick = () => {
+            const by = head.dataset.sort
+            state.sort = state.sort.by !== by ? {by: by, dir: "asc"}
+                : state.sort.dir === "asc" ? {by: by, dir: "desc"}
+                : {by: null, dir: null}
+            refreshSortHeads()
+            applyFilters()
+        }
+    })
+    const rowsBox = document.getElementById("rows")
+    const rowsInner = document.getElementById("rowsInner")
+
+    const listScope = () => {
+        const chosen = state.mode === "some" ? new Set(chosenMembers().map(person => person.key)) : null
+        if (activeView !== "sources" && activeView !== "luck") return {range: state.range, members: chosen, flipsOnly: false}
+        return {
+            range: state.period,
+            members: chosen || (state.mode === "top" ? new Set(topMembers().map(person => person.key)) : null),
+            flipsOnly: activeView === "luck",
+        }
+    }
+
+    const applyFilters = () => {
+        const scope = listScope()
+        document.getElementById("reasons").hidden = scope.flipsOnly
+        document.getElementById("hideAccrual").hidden = scope.flipsOnly
+        document.getElementById("clearReasons").hidden = scope.flipsOnly
+        state.filtered = events.filter(event => {
+            if (state.person && event.userId !== state.person.key) return false
+            if (scope.members && !scope.members.has(event.userId)) return false
+            if (scope.range && (event.at < scope.range[0] || event.at > scope.range[1])) return false
+            if (scope.flipsOnly && (event.reason !== "flip" || event.delta === 0)) return false
+            if (!scope.flipsOnly && state.reasons.size && !state.reasons.has(reasonOf(event))) return false
+            if (!scope.flipsOnly && state.hideAccrual && event.reason === "accrual") return false
+            if (isHidden(event)) return false
+            if (state.search) {
+                const hay = event.name + " " + (event.username || "") + " " + event.label + " " + event.command + " " + event.delta + " " + event.balance
+                if (hay.toLowerCase().indexOf(state.search) === -1) return false
+            }
+            return true
+        })
+        const key = ROW_SORTS[state.sort.by] || ROW_SORTS.when
+        const way = state.sort.by === null || state.sort.dir === "asc" ? 1 : -1
+        state.filtered.sort((a, b) => (key(a) - key(b)) * way || a.at - b.at)
+        rowsInner.style.height = (state.filtered.length * ROW_HEIGHT) + "px"
+        document.getElementById("count").innerHTML = divided([number(state.filtered.length) + (scope.flipsOnly ? " flips shown" : " events shown")]
+            .concat(scope.range ? [day(scope.range[0]) + " to " + day(scope.range[1])] : []))
+        rowsBox.scrollTop = 0
+        drawRows()
+        markSourceFamilies()
+    }
+
+    const drawRows = () => {
+        const first = Math.max(0, Math.floor(rowsBox.scrollTop / ROW_HEIGHT) - 5)
+        const visible = Math.ceil(rowsBox.clientHeight / ROW_HEIGHT) + 10
+        if (state.filtered.length === 0) {
+            rowsInner.innerHTML = "<div class='empty'>Nothing matches those filters</div>"
+            return
+        }
+        const parts = []
+        state.filtered.slice(first, first + visible).forEach((event, index) => {
+            const top = (first + index) * ROW_HEIGHT
+            parts.push("<div class='row' style='top:" + top + "px'>"
+                + "<span class='muted'>" + stampCell(event.at) + "</span>"
+                + "<span class='" + (event.delta > 0 ? "pos" : event.delta < 0 ? "neg" : "muted") + "'>" + signed(event.delta) + "</span>"
+                + "<span" + (event.shown === null ? " class='muted'" : "") + ">" + number(event.balance) + "</span>"
+                + "<span>" + labelOf(event) + "</span>"
+                + "<span class='muted'>" + (event.command || "—") + "</span>"
+                + "<span class='muted'>" + who(event) + "</span>"
+                + "<span class='muted'>" + (event.recovered ? "Yes" : "—") + "</span>"
+                + "</div>")
+        })
+        rowsInner.innerHTML = parts.join("")
+    }
+
+    rowsBox.onscroll = drawRows
+    refreshChips()
+    const SOURCE_ORDER = COLOUR_ORDER.concat(["newUser", "unrecorded"])
+    const MIN_LUCK_FLIPS = 20
+    const LUCK_RANGE = 4
+    const LUCK_COVERAGE = ["", "68%", "95%", "99.7%"]
+    const LUCK_EVEN_PX = 1
+    const LUCK_DRAWN_POINTS = 1200
+    const PERIOD_PAD = {left: 56, right: 16, top: 4, bottom: 20}
+    const PERIOD_BAR_PX = 4
+    const PERIOD_EDGE_PX = 6
+    const CONCENTRATION_SAMPLES = 200
+    const RANKING_SAMPLES = 60
+    const LABELLED_LANES = 10
+    const MIN_LABEL_GAP_PX = 14
+    const RANK_BUFFER_SHARE = 0.1
+    const RANK_TICK_GAP_PX = 46
+    const ERA_JOIN_MS = 10 * 60 * 1000
+    const ACCENT = "#7aa2f7"
+    const CONCENTRATION_BANDS = [
+        {size: 10, label: "Top 10", fill: "rgba(122, 162, 247, .16)", stroke: "#5b7fcf"},
+        {size: 3, label: "Top 3", fill: "rgba(122, 162, 247, .32)", stroke: "#7aa2f7"},
+        {size: 1, label: "Top 1", fill: "rgba(122, 162, 247, .55)", stroke: "#b9cefb"},
+    ]
+
+    const hoverAttr = text => escape(text).replace(/'/g, "&#39;")
+    const hoverTip = document.getElementById("hoverTip")
+    const HOVER_OFFSET_PX = 14
+    const HOVER_MARGIN_PX = 8
+    const hideHoverTip = () => { hoverTip.style.opacity = "0" }
+    document.addEventListener("pointermove", move => {
+        const target = move.target instanceof Element ? move.target.closest("[data-hover]") : null
+        if (target === null) {
+            hideHoverTip()
+            return
+        }
+        hoverTip.textContent = target.getAttribute("data-hover")
+        hoverTip.style.opacity = "1"
+        const below = move.clientY + HOVER_OFFSET_PX + hoverTip.offsetHeight <= window.innerHeight - HOVER_MARGIN_PX
+        const left = Math.min(window.innerWidth - hoverTip.offsetWidth - HOVER_MARGIN_PX, move.clientX + HOVER_OFFSET_PX)
+        hoverTip.style.left = Math.max(HOVER_MARGIN_PX, left) + "px"
+        hoverTip.style.top = (below ? move.clientY + HOVER_OFFSET_PX : move.clientY - hoverTip.offsetHeight - HOVER_OFFSET_PX) + "px"
+    })
+    document.addEventListener("pointerout", out => { if (out.relatedTarget === null) hideHoverTip() })
+    const memberIndex = person => Number(person.key)
+    const selectedMembers = () => state.mode === "person" ? [state.person]
+        : state.mode === "some" ? chosenMembers()
+        : state.mode === "top" ? topMembers()
+        : people
+    const singleSubject = () => state.mode === "person" || state.mode === "server"
+    const setHead = (view, title, text) => {
+        document.getElementById(view + "Title").innerHTML = title
+        document.getElementById(view + "Text").textContent = text
+    }
+    const percent = share => share === 0 ? "0%" : (share < .1 ? (share * 100).toFixed(1) : Math.round(share * 100)) + "%"
+
+    const shownLists = new Map()
+    const shownList = (name, person, keep) => {
+        const id = name + viewKey()
+        if (!shownLists.has(id)) shownLists.set(id, new Map())
+        const byPerson = shownLists.get(id)
+        if (!byPerson.has(person)) byPerson.set(person, person.list.filter(event => !isHidden(event) && keep(event)))
+        return byPerson.get(person)
+    }
+    const flipsOf = person => shownList("flips", person, event => event.reason === "flip" && event.delta !== 0)
+    const changesOf = person => shownList("changes", person, event => event.reason !== "openingBalance" && event.delta !== 0)
+    const periodSpans = new Map()
+    const periodSpanOf = () => {
+        const key = viewKey()
+        if (!periodSpans.has(key)) {
+            periodSpans.set(key, people.reduce((span, person) => changesOf(person).reduce((known, event) => known === null
+                ? [event.at, event.at] : [Math.min(known[0], event.at), Math.max(known[1], event.at)], span), null))
+        }
+        return periodSpans.get(key)
+    }
+    const inPeriod = event => state.period === null || (event.at >= state.period[0] && event.at <= state.period[1])
+    const PERIOD_STRIPS = {
+        luck: {eventsOf: flipsOf, every: "Measuring every flip, ", some: "Measuring flips from "},
+        sources: {eventsOf: changesOf, every: "Adding up every point, ", some: "Adding up points from "},
+    }
+
+    const setPeriod = period => {
+        if (sameRange(state.period, period)) return
+        state.period = period
+        state.ranges.luck = null
+        luckTracks.clear()
+        drawActiveView()
+    }
+
+    const drawPeriodStrip = key => {
+        const strip = PERIOD_STRIPS[key]
+        const periodSpan = periodSpanOf()
+        const box = document.getElementById(key + "Period")
+        box.hidden = periodSpan === null
+        if (periodSpan === null) return
+
+        const svg = document.getElementById(key + "PeriodChart")
+        const readout = document.getElementById(key + "PeriodReadout")
+        const pad = PERIOD_PAD
+        const whole = [periodSpan[0], Math.max(periodSpan[0] + 1, periodSpan[1])]
+        const stored = state.periodViews[key]
+        const held = stored ? [Math.max(whole[0], stored[0]), Math.min(whole[1], stored[1])] : null
+        const view = held && held[1] - held[0] >= MIN_SPAN_MS ? held : whole
+        const from = view[0]
+        const to = view[1]
+        const width = svg.parentElement.clientWidth || 900
+        const height = svg.parentElement.clientHeight || 56
+        const plotWidth = Math.max(1, width - pad.left - pad.right)
+        const floor = height - pad.bottom
+        const toX = time => pad.left + (time - from) / (to - from) * plotWidth
+        const svgX = clientX => {
+            const frame = svg.getBoundingClientRect()
+            return (clientX - frame.left) / frame.width * width
+        }
+        const timeAt = x => from + (x - pad.left) / plotWidth * (to - from)
+        const clampTime = time => Math.min(to, Math.max(from, time))
+
+        const buckets = new Array(Math.max(1, Math.floor(plotWidth / PERIOD_BAR_PX))).fill(0)
+        selectedMembers().forEach(person => strip.eventsOf(person).forEach(event => {
+            if (event.at < from || event.at > to) return
+            buckets[Math.min(buckets.length - 1, Math.floor((event.at - from) / (to - from) * buckets.length))]++
+        }))
+        const tallest = Math.max(1, ...buckets)
+        const slot = plotWidth / buckets.length
+        const bucketSpan = (to - from) / buckets.length
+        const ticks = timeTicks(from, to, Math.max(3, Math.round(plotWidth / 130))).ticks.map(tick => {
+            const x = toX(tick.at).toFixed(1)
+            return "<line class='grid' x1='" + x + "' x2='" + x + "' y1='" + floor + "' y2='" + (floor + 4) + "'></line>"
+                + "<text class='axis' text-anchor='middle' x='" + x + "' y='" + (height - 5) + "'>" + tick.label + "</text>"
+        }).join("")
+
+        const render = period => {
+            const picked = period || [from, to]
+            const bars = buckets.map((count, index) => {
+                if (!count) return ""
+                const start = from + index * bucketSpan
+                const tall = Math.max(1.5, Math.sqrt(count / tallest) * (floor - pad.top))
+                const inside = start + bucketSpan >= picked[0] && start <= picked[1]
+                return "<rect x='" + (pad.left + index * slot).toFixed(1) + "' y='" + (floor - tall).toFixed(1) + "' width='" + Math.max(1, slot - 1).toFixed(1)
+                    + "' height='" + tall.toFixed(1) + "' fill='" + (inside ? ACCENT : "rgba(154, 161, 177, .3)") + "'></rect>"
+            }).join("")
+            let chosen = ""
+            if (period && period[1] >= from && period[0] <= to) {
+                const edge = pad.left + plotWidth
+                const left = Math.min(edge, Math.max(pad.left, toX(period[0])))
+                const right = Math.min(edge, Math.max(pad.left, toX(period[1])))
+                const middle = (pad.top + floor) / 2
+                const handle = x => "<rect x='" + (x - 2).toFixed(1) + "' y='" + (middle - 8).toFixed(1) + "' width='4' height='16' rx='1.5' fill='" + ACCENT + "'></rect>"
+                chosen = "<rect x='" + left.toFixed(1) + "' y='" + pad.top + "' width='" + Math.max(1, right - left).toFixed(1) + "' height='" + (floor - pad.top)
+                    + "' fill='rgba(122, 162, 247, .12)' stroke='" + ACCENT + "'></rect>"
+                    + (period[0] >= from ? handle(left) : "") + (period[1] <= to ? handle(right) : "")
+            }
+            svg.setAttribute("viewBox", "0 0 " + width + " " + height)
+            svg.innerHTML = ticks + horizontal(pad, width, floor) + bars + chosen
+            readout.innerHTML = period
+                ? strip.some + "<span class='periodPicked'>" + longDay(period[0]) + " to " + longDay(period[1]) + "</span>"
+                : strip.every + longDay(whole[0]) + " to " + longDay(whole[1])
+        }
+        render(state.period)
+
+        const grabOf = x => {
+            const period = state.period
+            if (period === null) return "new"
+            const left = toX(period[0])
+            const right = toX(period[1])
+            if (Math.abs(x - left) <= PERIOD_EDGE_PX) return "start"
+            if (Math.abs(x - right) <= PERIOD_EDGE_PX) return "end"
+            return x > left && x < right ? "move" : "new"
+        }
+        const snapped = period => {
+            const start = new Date(period[0])
+            start.setHours(0, 0, 0, 0)
+            const end = new Date(period[1])
+            if (end.getHours() || end.getMinutes() || end.getSeconds() || end.getMilliseconds()) {
+                end.setHours(0, 0, 0, 0)
+                end.setDate(end.getDate() + 1)
+            }
+            const snap = [Math.max(from, start.getTime()), Math.min(to, end.getTime() - 1)]
+            return snap[0] <= whole[0] && snap[1] >= whole[1] ? null : snap
+        }
+
+        let drag = null
+        svg.onpointerdown = down => {
+            if (down.pointerType === "mouse" && down.button !== 0) return
+            svg.setPointerCapture(down.pointerId)
+            const x = svgX(down.clientX)
+            drag = {grab: grabOf(x), x: x, period: state.period, preview: state.period, moved: false}
+            if (drag.grab === "move") svg.style.cursor = "grabbing"
+        }
+        svg.onpointermove = move => {
+            const x = svgX(move.clientX)
+            if (drag === null) {
+                const grab = grabOf(x)
+                svg.style.cursor = grab === "start" || grab === "end" ? "ew-resize" : grab === "move" ? "grab" : ""
+                return
+            }
+            if (!drag.moved && Math.abs(x - drag.x) <= TAP_SLOP_PX) return
+            drag.moved = true
+            const at = clampTime(timeAt(x))
+            if (drag.grab === "move") {
+                const length = drag.period[1] - drag.period[0]
+                const start = Math.min(to - length, Math.max(from, drag.period[0] + (x - drag.x) / plotWidth * (to - from)))
+                drag.preview = [start, start + length]
+            } else {
+                const anchor = drag.grab === "start" ? drag.period[1] : drag.grab === "end" ? drag.period[0] : clampTime(timeAt(drag.x))
+                drag.preview = [Math.min(anchor, at), Math.max(anchor, at)]
+            }
+            render(drag.preview)
+        }
+        const release = () => {
+            if (drag === null) return
+            const finished = drag
+            drag = null
+            svg.style.cursor = ""
+            if (!finished.moved) return
+            if (finished.preview === null || finished.preview[1] - finished.preview[0] < MIN_SPAN_MS) {
+                render(state.period)
+                return
+            }
+            const period = snapped(finished.preview)
+            if (sameRange(state.period, period)) render(period)
+            else setPeriod(period)
+        }
+        svg.onpointerup = release
+        svg.onpointercancel = release
+        svg.onpointerleave = () => {
+            if (drag === null) svg.style.cursor = ""
+        }
+        svg.ondblclick = () => {
+            state.periodViews[key] = null
+            if (state.period === null) drawPeriodStrip(key)
+            else setPeriod(null)
+        }
+
+        const placeView = (start, length) => {
+            const at = Math.min(whole[1] - length, Math.max(whole[0], start))
+            return at <= whole[0] && at + length >= whole[1] ? null : [at, at + length]
+        }
+        const setPeriodView = next => {
+            if (sameRange(state.periodViews[key] || null, next)) return
+            state.periodViews[key] = next
+            drawPeriodStrip(key)
+        }
+        svg.onwheel = wheel => {
+            wheel.preventDefault()
+            const unit = wheel.deltaMode === 1 ? LINE_PX : wheel.deltaMode === 2 ? height : 1
+            const sideways = wheel.shiftKey && !wheel.deltaX
+            const across = (sideways ? wheel.deltaY : wheel.deltaX) * unit
+            const along = (sideways ? 0 : wheel.deltaY) * unit
+            const length = to - from
+
+            if (Math.abs(across) > Math.abs(along)) {
+                setPeriodView(placeView(from + across * length / plotWidth, length))
+                return
+            }
+
+            const speed = wheel.ctrlKey ? PINCH_ZOOM_SPEED : ZOOM_SPEED
+            const change = Math.max(-MAX_ZOOM_PER_EVENT, Math.min(MAX_ZOOM_PER_EVENT, along * speed))
+            const next = Math.min(whole[1] - whole[0], Math.max(MIN_SPAN_MS, length * Math.exp(change)))
+            const focus = clampTime(timeAt(svgX(wheel.clientX)))
+            setPeriodView(placeView(focus - (focus - from) / Math.max(1, length) * next, next))
+        }
+
+        document.querySelectorAll("#" + key + "PeriodPresets [data-range]").forEach(button => {
+            const length = PRESETS[button.dataset.range]
+            const current = state.period
+            const on = length === null
+                ? current === null
+                : current !== null && length < whole[1] - whole[0]
+                    && Math.abs(current[1] - whole[1]) < PRESET_TOLERANCE_MS
+                    && Math.abs(current[1] - current[0] - length) < PRESET_TOLERANCE_MS
+            button.className = on ? "tool on" : "tool"
+            button.onclick = () => setPeriod(length === null || length >= whole[1] - whole[0] ? null : [whole[1] - length, whole[1]])
+        })
+    }
+
+    const sourceTotals = person => {
+        const totals = new Map()
+        changesOf(person).forEach(event => {
+            if (!inPeriod(event)) return
+            const family = colourKey(reasonOf(event))
+            totals.set(family, (totals.get(family) || 0) + shownAmount(event))
+        })
+        return totals
+    }
+    const sourceRank = family => {
+        const at = SOURCE_ORDER.indexOf(family)
+        return at === -1 ? SOURCE_ORDER.length : at
+    }
+    const swatch = family => family === "unrecorded"
+        ? "<i class='unknown'></i>"
+        : "<i style='background:" + colourFor(family) + "'></i>"
+    const familyReasons = family => Array.from(reasonChips.keys())
+        .filter(reason => colourKey(reason) === family && reasonChips.get(reason).style.display !== "none")
+    const familyAttr = family => " data-source='" + family + "'" + (familyReasons(family).length ? " data-family='" + family + "'" : "")
+    const showFamily = family => {
+        const wanted = familyReasons(family)
+        if (wanted.length === 0) return
+        const already = wanted.length === state.reasons.size && wanted.every(reason => state.reasons.has(reason))
+        state.reasons.clear()
+        if (!already) wanted.forEach(reason => state.reasons.add(reason))
+        reasonChips.forEach((chip, reason) => { chip.className = state.reasons.has(reason) ? "chip on" : "chip" })
+        applyFilters()
+    }
+    const markSourceFamilies = () => {
+        const chosen = new Set(Array.from(state.reasons).map(colourKey))
+        document.querySelectorAll("#sourcesRows [data-source], #sourcesLegend [data-source]").forEach(element => {
+            element.classList.toggle("dim", chosen.size > 0 && !chosen.has(element.dataset.source))
+        })
+    }
+    const sourceSegment = ([family, value], scale) => "<div" + familyAttr(family) + " class='srcSeg" + (family === "unrecorded" ? " unknown" : "")
+        + "' style='flex: 0 0 " + (Math.abs(value) / Math.max(1, scale) * 100).toFixed(3) + "%"
+        + (family === "unrecorded" ? "" : "; background:" + colourFor(family))
+        + "' data-hover='" + hoverAttr(labelFor(family) + ": " + signed(value)) + "'></div>"
+
+    let sourcesScale = "member"
+
+    const drawSourceBreakdown = () => {
+        const totals = new Map()
+        const members = state.mode === "person" ? [state.person] : people
+        members.forEach(person => sourceTotals(person).forEach((value, family) => {
+            totals.set(family, (totals.get(family) || 0) + value)
+        }))
+        const entries = Array.from(totals)
+            .filter(([, value]) => value !== 0)
+            .sort((a, b) => sourceRank(a[0]) - sourceRank(b[0]) || a[0].localeCompare(b[0]))
+        const rows = document.getElementById("sourcesRows")
+        if (entries.length === 0) {
+            rows.innerHTML = "<div class='muted'>" + (state.period === null ? "Nothing to break down yet." : "Nothing changed in this period.") + "</div>"
+            return
+        }
+
+        const reach = Math.max(1, ...entries.map(([, value]) => Math.abs(value)))
+        const net = entries.reduce((sum, [, value]) => sum + value, 0)
+        rows.innerHTML = entries.map(([family, value]) => {
+            const bar = sourceSegment([family, value], reach)
+            return "<div class='srcRow'>"
+                + "<div class='srcName'" + familyAttr(family) + ">" + swatch(family) + labelFor(family) + "</div>"
+                + "<div class='srcBar' style='grid-template-columns: 50% 50%'>"
+                + "<div class='srcSide loss'>" + (value < 0 ? bar : "") + "</div>"
+                + "<div class='srcSide'>" + (value > 0 ? bar : "") + "</div>"
+                + "</div>"
+                + "<div class='srcNet'>" + toned(signed(value)) + "</div>"
+                + "</div>"
+        }).join("")
+            + "<div class='srcRow total'><div class='srcName'>Net change</div><div></div><div class='srcNet'>" + toned(signed(net)) + "</div></div>"
+    }
+
+    const drawSourceView = () => {
+        drawPeriodStrip("sources")
+        const single = singleSubject()
+        document.getElementById("sourcesTools").hidden = single
+        if (state.mode === "person") {
+            setHead("sources", "Where " + nameHtml(state.person) + "'s points came from",
+                "Net points from each source. Gains run right of the line and losses run left. Hover a bar for the exact amount, and click a source to list its events below.")
+        } else if (state.mode === "server") {
+            setHead("sources", "Where the server's points came from",
+                "Every member's changes added together, by source. Gains run right of the line and losses run left. Click a source to list its events below.")
+        } else {
+            setHead("sources", state.mode === "some" ? "Where points came from: " + chosenTitle()
+                : state.mode === "top" ? "Where points came from: top " + topMembers().length + " by " + topPhrase() : "Where points came from",
+                "Each member's net change from every source. Gains run right of the line and losses run left, so two members with the same balance can show very different stories. Per member scales every bar to its own member, so the mix is readable for everyone; Shared puts everyone on one scale to compare size. Click a source to list its events below.")
+        }
+        if (single) {
+            drawSourceBreakdown()
+            return
+        }
+
+        const rows = selectedMembers()
+            .map(person => ({person: person, totals: sourceTotals(person)}))
+            .filter(row => Array.from(row.totals.values()).some(value => value !== 0))
+            .sort((a, b) => b.person.last - a.person.last)
+        if (rows.length === 0) {
+            document.getElementById("sourcesRows").innerHTML = "<div class='muted'>" + (state.period === null ? "Nothing to break down yet." : "Nothing changed in this period.") + "</div>"
+            document.getElementById("sourcesLegend").innerHTML = ""
+            return
+        }
+
+        const sideOf = (row, gaining) => Array.from(row.totals)
+            .filter(([, value]) => gaining ? value > 0 : value < 0)
+            .sort((a, b) => sourceRank(a[0]) - sourceRank(b[0]))
+        const sumOf = (row, gaining) => sideOf(row, gaining).reduce((sum, [, value]) => sum + Math.abs(value), 0)
+        const shared = sourcesScale === "shared"
+        const most = {
+            gain: Math.max(0, ...rows.map(row => sumOf(row, true))),
+            loss: Math.max(0, ...rows.map(row => sumOf(row, false))),
+        }
+        const span = Math.max(1, most.gain + most.loss)
+        const columns = shared
+            ? (most.loss / span * 100).toFixed(3) + "% " + (most.gain / span * 100).toFixed(3) + "%"
+            : "50% 50%"
+
+        document.getElementById("sourcesRows").innerHTML = rows.map(row => {
+            const net = Array.from(row.totals.values()).reduce((sum, value) => sum + value, 0)
+            const own = Math.max(sumOf(row, true), sumOf(row, false))
+            return "<div class='srcRow'>"
+                + "<div class='srcName'>" + who(row.person) + "</div>"
+                + "<div class='srcBar' style='grid-template-columns: " + columns + "'>"
+                + "<div class='srcSide loss'>" + sideOf(row, false).reverse().map(entry => sourceSegment(entry, shared ? most.loss : own)).join("") + "</div>"
+                + "<div class='srcSide'>" + sideOf(row, true).map(entry => sourceSegment(entry, shared ? most.gain : own)).join("") + "</div>"
+                + "</div>"
+                + "<div class='srcNet'>" + toned(signed(net)) + "</div>"
+                + "</div>"
+        }).join("")
+
+        const present = new Set()
+        rows.forEach(row => row.totals.forEach((value, family) => { if (value !== 0) present.add(family) }))
+        document.getElementById("sourcesLegend").innerHTML = Array.from(present)
+            .sort((a, b) => sourceRank(a) - sourceRank(b) || a.localeCompare(b))
+            .map(family => "<span" + familyAttr(family) + ">" + swatch(family) + labelFor(family) + "</span>").join("")
+    }
+    const drawSources = () => {
+        drawSourceView()
+        markSourceFamilies()
+    }
+    document.getElementById("sourcesRows").onclick = event => {
+        const target = event.target.closest("[data-family]")
+        if (target) showFamily(target.dataset.family)
+    }
+    document.getElementById("sourcesLegend").onclick = document.getElementById("sourcesRows").onclick
+
+    const luckOf = person => {
+        let net = 0
+        let variance = 0
+        let wins = 0
+        let losses = 0
+        flipsOf(person).forEach(event => {
+            if (!inPeriod(event)) return
+            net += event.delta
+            variance += event.delta * event.delta
+            if (event.delta > 0) wins++
+            else losses++
+        })
+        return {flips: wins + losses, wins: wins, losses: losses, net: net, z: variance ? net / Math.sqrt(variance) : 0}
+    }
+    const verdict = z => z > 2 ? "Very lucky" : z > 1 ? "Lucky" : z >= -1 ? "About even" : z >= -2 ? "Unlucky" : "Very unlucky"
+    const sigmas = z => {
+        const tenths = Math.round(z * 10)
+        return (tenths > 0 ? "+" : tenths < 0 ? "-" : "") + Math.abs(tenths / 10).toFixed(1) + "\u03c3"
+    }
+
+    const timeAxis = (from, to, width, height, pad) => {
+        const toX = time => pad.left + (time - from) / Math.max(1, to - from) * (width - pad.left - pad.right)
+        const markup = timeTicks(from, to, Math.max(3, Math.round((width - pad.left - pad.right) / 130))).ticks.map(tick => {
+            const x = toX(tick.at).toFixed(1)
+            return "<line class='vgrid' x1='" + x + "' x2='" + x + "' y1='" + pad.top + "' y2='" + (height - pad.bottom) + "'></line>"
+                + "<text class='axis' text-anchor='middle' x='" + x + "' y='" + (height - 6) + "'>" + tick.label + "</text>"
+        }).join("")
+        return {toX: toX, markup: markup}
+    }
+    const sampleAt = (svg, clientX, width, pad, count) => {
+        const box = svg.getBoundingClientRect()
+        const x = (clientX - box.left) / box.width * width
+        const ratio = (x - pad.left) / Math.max(1, width - pad.left - pad.right)
+        return Math.max(0, Math.min(count - 1, Math.round(ratio * (count - 1))))
+    }
+    const moveHair = (id, x) => {
+        const hair = document.getElementById(id)
+        hair.setAttribute("x1", x)
+        hair.setAttribute("x2", x)
+        hair.style.opacity = "1"
+    }
+    const hideHair = id => {
+        const hair = document.getElementById(id)
+        if (hair) hair.style.opacity = "0"
+    }
+    const hairLine = (id, pad, height) => "<line id='" + id + "' class='grid' y1='" + pad.top + "' y2='" + (height - pad.bottom) + "' style='opacity:0'></line>"
+    const horizontal = (pad, width, y) => "<line class='grid' x1='" + pad.left + "' x2='" + (width - pad.right) + "' y1='" + y + "' y2='" + y + "'></line>"
+    const leftLabel = (pad, y, text) => "<text class='axis' text-anchor='end' x='" + (pad.left - 8) + "' y='" + (Number(y) + 4) + "'>" + text + "</text>"
+    const clipTo = (id, pad, width, height) => "<defs><clipPath id='" + id + "'><rect x='" + pad.left + "' y='" + pad.top
+        + "' width='" + Math.max(0, width - pad.left - pad.right) + "' height='" + Math.max(0, height - pad.top - pad.bottom) + "'></rect></clipPath></defs>"
+
+    const lastAtOrBefore = (points, time) => {
+        let low = 0
+        let high = points.length - 1
+        let found = -1
+        while (low <= high) {
+            const middle = (low + high) >> 1
+            if (points[middle].t <= time) {
+                found = middle
+                low = middle + 1
+            } else {
+                high = middle - 1
+            }
+        }
+        return found
+    }
+
+    const gestures = {}
+    const heldScales = {}
+    const gestureOf = key => gestures[key]
+        || (gestures[key] = {pointers: new Map(), panning: null, pinching: null, dragFrom: null, wheelHold: false, wheelTimer: null})
+    const holdingScale = key => {
+        const gesture = gestureOf(key)
+        return (gesture.panning !== null && gesture.panning.moved) || gesture.wheelHold
+    }
+    const sameRange = (a, b) => (a || null) === (b || null) || (Boolean(a) && Boolean(b) && a[0] === b[0] && a[1] === b[1])
+
+    const detachNavigation = (svg, key) => {
+        svg.onpointerdown = null
+        svg.onpointermove = null
+        svg.onpointerup = null
+        svg.onpointercancel = null
+        svg.onpointerleave = null
+        svg.onwheel = null
+        svg.ondblclick = null
+        document.getElementById(key + "Range").textContent = ""
+    }
+
+    const attachNavigation = ({key, svg, whole, width, height, pad, redraw, hover, leave}) => {
+        const gesture = gestureOf(key)
+        const span = state.ranges[key] || whole
+        const plotWidth = Math.max(1, width - pad.left - pad.right)
+        const svgX = clientX => {
+            const box = svg.getBoundingClientRect()
+            return (clientX - box.left) / box.width * width
+        }
+        const timeAt = clientX => span[0] + (svgX(clientX) - pad.left) / plotWidth * (span[1] - span[0])
+        const place = (from, length) => {
+            if (length >= whole[1] - whole[0]) return null
+            if (from < whole[0]) from = whole[0]
+            if (from + length > whole[1]) from = whole[1] - length
+            return [from, from + length]
+        }
+        const setRange = range => {
+            if (sameRange(state.ranges[key], range)) return
+            state.ranges[key] = range
+            redraw()
+        }
+        const bandId = key + "Band"
+        svg.insertAdjacentHTML("beforeend", "<rect id='" + bandId + "' y='" + pad.top + "' height='" + Math.max(0, height - pad.top - pad.bottom)
+            + "' fill='" + ACCENT + "' opacity='0.2' style='display:none'></rect>")
+        const band = () => document.getElementById(bandId)
+        const settle = () => {
+            if (activeView === key) drawActiveView()
+        }
+
+        svg.onpointerdown = down => {
+            if (down.pointerType === "mouse" && down.button !== 0) return
+            svg.setPointerCapture(down.pointerId)
+            gesture.pointers.set(down.pointerId, {x: down.clientX, y: down.clientY})
+
+            if (gesture.pointers.size === 2) {
+                const [a, b] = Array.from(gesture.pointers.values())
+                const focus = timeAt((a.x + b.x) / 2)
+                gesture.panning = null
+                svg.style.cursor = ""
+                gesture.pinching = {
+                    distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+                    focus: focus,
+                    ratio: (focus - span[0]) / Math.max(1, span[1] - span[0]),
+                    length: span[1] - span[0],
+                }
+                leave()
+                return
+            }
+            if (gesture.pointers.size > 2) return
+
+            if (down.shiftKey) {
+                gesture.dragFrom = {x: svgX(down.clientX), at: timeAt(down.clientX)}
+                const rect = band()
+                rect.setAttribute("x", gesture.dragFrom.x)
+                rect.setAttribute("width", "0")
+                rect.style.display = ""
+                return
+            }
+            gesture.panning = {clientX: down.clientX, from: span[0], length: span[1] - span[0], moved: false}
+        }
+
+        svg.onpointermove = move => {
+            if (gesture.pointers.has(move.pointerId)) gesture.pointers.set(move.pointerId, {x: move.clientX, y: move.clientY})
+
+            if (gesture.pinching !== null) {
+                if (gesture.pointers.size < 2) return
+                const [a, b] = Array.from(gesture.pointers.values())
+                const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+                const length = Math.min(whole[1] - whole[0], Math.max(MIN_SPAN_MS, gesture.pinching.length * gesture.pinching.distance / distance))
+                setRange(place(gesture.pinching.focus - gesture.pinching.ratio * length, length))
+                return
+            }
+
+            if (gesture.panning !== null) {
+                if (!gesture.panning.moved) {
+                    if (Math.abs(move.clientX - gesture.panning.clientX) <= TAP_SLOP_PX) return
+                    gesture.panning.moved = true
+                    svg.style.cursor = "grabbing"
+                    leave()
+                }
+                setRange(place(gesture.panning.from + (gesture.panning.clientX - move.clientX) * gesture.panning.length / plotWidth, gesture.panning.length))
+                return
+            }
+
+            if (gesture.dragFrom !== null) {
+                const x = svgX(move.clientX)
+                const rect = band()
+                rect.setAttribute("x", Math.min(x, gesture.dragFrom.x))
+                rect.setAttribute("width", Math.abs(x - gesture.dragFrom.x))
+            }
+            if (move.pointerType === "mouse") hover(move.clientX)
+        }
+
+        const release = up => {
+            gesture.pointers.delete(up.pointerId)
+
+            if (gesture.pinching !== null) {
+                if (gesture.pointers.size < 2) gesture.pinching = null
+                return
+            }
+
+            if (gesture.panning !== null) {
+                const moved = gesture.panning.moved
+                gesture.panning = null
+                svg.style.cursor = ""
+                if (moved) settle()
+                else if (up.pointerType !== "mouse" && up.type === "pointerup") hover(up.clientX)
+                return
+            }
+
+            if (gesture.dragFrom === null) return
+            const from = Math.min(gesture.dragFrom.at, timeAt(up.clientX))
+            const to = Math.max(gesture.dragFrom.at, timeAt(up.clientX))
+            gesture.dragFrom = null
+            band().style.display = "none"
+            if (to - from < MIN_SPAN_MS) return
+            setRange([from, to])
+        }
+        svg.onpointerup = release
+        svg.onpointercancel = release
+        svg.onpointerleave = event => {
+            if (event.pointerType === "mouse" && gesture.panning === null && gesture.pinching === null) leave()
+        }
+
+        svg.onwheel = wheel => {
+            wheel.preventDefault()
+            const unit = wheel.deltaMode === 1 ? LINE_PX : wheel.deltaMode === 2 ? height : 1
+            const sideways = wheel.shiftKey && !wheel.deltaX
+            const across = (sideways ? wheel.deltaY : wheel.deltaX) * unit
+            const along = (sideways ? 0 : wheel.deltaY) * unit
+            const length = span[1] - span[0]
+            gesture.dragFrom = null
+            band().style.display = "none"
+
+            if (Math.abs(across) > Math.abs(along)) {
+                gesture.wheelHold = true
+                clearTimeout(gesture.wheelTimer)
+                gesture.wheelTimer = setTimeout(() => {
+                    gesture.wheelHold = false
+                    settle()
+                }, WHEEL_SETTLE_MS)
+                setRange(place(span[0] + across * length / plotWidth, length))
+                return
+            }
+            gesture.wheelHold = false
+            clearTimeout(gesture.wheelTimer)
+            const speed = wheel.ctrlKey ? PINCH_ZOOM_SPEED : ZOOM_SPEED
+            const change = Math.max(-MAX_ZOOM_PER_EVENT, Math.min(MAX_ZOOM_PER_EVENT, along * speed))
+            const next = Math.min(whole[1] - whole[0], Math.max(MIN_SPAN_MS, length * Math.exp(change)))
+            const focus = Math.min(span[1], Math.max(span[0], timeAt(wheel.clientX)))
+            setRange(place(focus - (focus - span[0]) / Math.max(1, length) * next, next))
+        }
+        svg.ondblclick = () => setRange(null)
+
+        document.querySelectorAll("#" + key + "Presets [data-range]").forEach(button => {
+            const length = PRESETS[button.dataset.range]
+            const current = state.ranges[key] || null
+            const on = length === null
+                ? current === null
+                : current !== null && length < whole[1] - whole[0]
+                    && Math.abs(current[1] - whole[1]) < PRESET_TOLERANCE_MS
+                    && Math.abs(current[1] - current[0] - length) < PRESET_TOLERANCE_MS
+            button.className = on ? "tool on" : "tool"
+            button.onclick = () => setRange(length === null || length >= whole[1] - whole[0] ? null : [whole[1] - length, whole[1]])
+        })
+        document.getElementById(key + "Range").textContent = state.ranges[key] ? rangeLabel(span[0], span[1]) : ""
+    }
+
+    const luckTracks = new Map()
+    const luckTrackOf = () => {
+        const id = state.mode === "person" ? "member" + state.person.key : "server"
+        if (luckTracks.has(id)) return luckTracks.get(id)
+        const flips = (state.mode === "person" ? [state.person] : people)
+            .flatMap(person => flipsOf(person).filter(inPeriod))
+            .sort((a, b) => a.at - b.at)
+        let net = 0
+        let variance = 0
+        let wins = 0
+        const track = flips.map((event, index) => {
+            net += event.delta
+            variance += event.delta * event.delta
+            if (event.delta > 0) wins++
+            return {t: event.at, net: net, spread: Math.sqrt(variance), count: index + 1}
+        })
+        const result = {track: track, wins: wins}
+        luckTracks.set(id, result)
+        return result
+    }
+
+    const drawLuckTimeline = () => {
+        const svg = document.getElementById("luckChart")
+        const readout = document.getElementById("luckReadout")
+        const legend = document.getElementById("luckLegend")
+        const {track, wins} = luckTrackOf()
+        if (track.length < MIN_LUCK_FLIPS) {
+            detachNavigation(svg, "luck")
+            svg.innerHTML = ""
+            legend.innerHTML = ""
+            const when = state.period === null ? " so far" : " in this period"
+            readout.textContent = track.length === 0 ? (state.period === null ? "No flips yet." : "No flips in this period.")
+                : "Only " + track.length + (track.length === 1 ? " flip" : " flips") + when + ", too few to judge."
+            return
+        }
+
+        const last = track[track.length - 1]
+        const whole = [track[0].t, Math.max(track[0].t + 1, last.t)]
+        const span = state.ranges.luck || whole
+        const first = Math.max(0, lastAtOrBefore(track, span[0]))
+        const end = Math.min(track.length - 1, lastAtOrBefore(track, span[1]) + 1)
+        const inView = track.slice(first, end + 1)
+        const every = Math.max(1, Math.ceil(inView.length / LUCK_DRAWN_POINTS))
+        const drawn = inView.filter((point, index) => index % every === 0 || index === inView.length - 1)
+
+        const width = svg.parentElement.clientWidth || 900
+        const height = svg.parentElement.clientHeight || 460
+        const pad = {left: 56, right: 16, top: 12, bottom: 24}
+        const axis = timeAxis(span[0], span[1], width, height, pad)
+        const fitted = Math.max(1, 3 * drawn[drawn.length - 1].spread, ...drawn.map(point => Math.abs(point.net))) * 1.08
+        const reach = holdingScale("luck") && heldScales.luck ? Math.max(heldScales.luck, fitted) : fitted
+        heldScales.luck = reach
+        const toY = value => pad.top + (reach - value) / (2 * reach) * (height - pad.top - pad.bottom)
+        const step = niceStep(2 * reach, Math.max(4, Math.round((height - pad.top - pad.bottom) / 70)))
+
+        let grid = ""
+        for (let value = Math.ceil(-reach / step) * step; value <= reach; value += step) {
+            const y = toY(value).toFixed(1)
+            grid += horizontal(pad, width, y) + leftLabel(pad, y, short(Math.abs(value) < step / 2 ? 0 : value))
+        }
+        const band = sigmaWidth => drawn.map((point, index) => (index ? "L" : "M") + axis.toX(point.t).toFixed(1) + " " + toY(sigmaWidth * point.spread).toFixed(1)).join(" ")
+            + " " + drawn.slice().reverse().map(point => "L" + axis.toX(point.t).toFixed(1) + " " + toY(-sigmaWidth * point.spread).toFixed(1)).join(" ") + " Z"
+        const line = drawn.map((point, index) => (index ? "L" : "M") + axis.toX(point.t).toFixed(1) + " " + toY(point.net).toFixed(1)).join(" ")
+        const zero = toY(0)
+        const lineIn = (colour, clip) => "<path d='" + line + "' fill='none' style='stroke: " + colour + "'" + (clip ? " clip-path='url(#" + clip + ")'" : "")
+            + " stroke-width='1.8' stroke-linejoin='round'></path>"
+
+        svg.setAttribute("viewBox", "0 0 " + width + " " + height)
+        svg.innerHTML = clipTo("luckClip", pad, width, height)
+            + clipTo("luckAbove", {left: pad.left, right: pad.right, top: pad.top, bottom: height - zero + LUCK_EVEN_PX}, width, height)
+            + clipTo("luckBelow", {left: pad.left, right: pad.right, top: zero + LUCK_EVEN_PX, bottom: pad.bottom}, width, height)
+            + grid + axis.markup
+            + "<g clip-path='url(#luckClip)'>"
+            + "<path d='" + band(3) + "' fill='rgba(154, 161, 177, .05)'></path>"
+            + "<path d='" + band(2) + "' fill='rgba(154, 161, 177, .08)'></path>"
+            + "<path d='" + band(1) + "' fill='rgba(154, 161, 177, .14)'></path>"
+            + horizontal(pad, width, zero.toFixed(1))
+            + lineIn("var(--dim)") + lineIn("var(--up)", "luckAbove") + lineIn("var(--down)", "luckBelow")
+            + "</g>"
+            + hairLine("luckHair", pad, height)
+
+        const summary = divided([number(last.count) + " flips", Math.round(wins / last.count * 100) + "% won",
+            signed(last.net) + " points", sigmas(last.net / last.spread) + " " + verdict(last.net / last.spread)])
+        readout.innerHTML = summary
+        legend.innerHTML = "<span><i style='background: var(--up)'></i>Ahead on flips</span>"
+            + "<span><i style='background: var(--down)'></i>Behind on flips</span>"
+            + "<span><i style='background: rgba(154, 161, 177, .45)'></i>Ordinary luck, within 1\u03c3 <span class='faint'>" + LUCK_COVERAGE[1] + "</span></span>"
+            + "<span><i style='background: rgba(154, 161, 177, .26)'></i>Unusual but possible, within 2\u03c3 <span class='faint'>" + LUCK_COVERAGE[2] + "</span></span>"
+            + "<span><i style='background: rgba(154, 161, 177, .12)'></i>Rare, within 3\u03c3 <span class='faint'>" + LUCK_COVERAGE[3] + "</span></span>"
+
+        attachNavigation({
+            key: "luck", svg: svg, whole: whole, width: width, height: height, pad: pad, redraw: drawLuckTimeline,
+            hover: clientX => {
+                const box = svg.getBoundingClientRect()
+                const ratio = ((clientX - box.left) / box.width * width - pad.left) / Math.max(1, width - pad.left - pad.right)
+                const time = span[0] + ratio * (span[1] - span[0])
+                let nearest = drawn[0]
+                drawn.forEach(point => { if (Math.abs(point.t - time) < Math.abs(nearest.t - time)) nearest = point })
+                moveHair("luckHair", axis.toX(nearest.t).toFixed(1))
+                readout.innerHTML = divided([longDay(nearest.t), number(nearest.count) + " flips so far",
+                    signed(nearest.net) + " points", sigmas(nearest.net / nearest.spread)])
+            },
+            leave: () => {
+                hideHair("luckHair")
+                readout.innerHTML = summary
+            },
+        })
+    }
+
+    const drawLuck = () => {
+        drawPeriodStrip("luck")
+        const single = singleSubject()
+        document.getElementById("luckRows").hidden = single
+        document.getElementById("luckNote").hidden = single
+        document.getElementById("luckSingle").hidden = !single
+
+        if (state.mode === "person") {
+            setHead("luck", nameHtml(state.person) + "'s flip luck", "The running total of " + nameText(state.person)
+                + "'s flips" + (state.period === null ? "" : " in the chosen period") + ". The shaded bands are \u00b11\u03c3, \u00b12\u03c3 and \u00b13\u03c3, where a fair coin would normally leave them.")
+            drawLuckTimeline()
+            return
+        }
+        if (state.mode === "server") {
+            setHead("luck", "Server flip luck", "The running total of every flip on the server" + (state.period === null ? "" : " in the chosen period") + ". The shaded bands are \u00b11\u03c3, \u00b12\u03c3 and \u00b13\u03c3, where a fair coin would normally leave it.")
+            drawLuckTimeline()
+            return
+        }
+        setHead("luck", state.mode === "some" ? "Flip luck: " + chosenTitle()
+            : state.mode === "top" ? "Flip luck: top " + topMembers().length + " by " + topPhrase() : "Flip luck",
+            "Every flip is a fair 50/50, so everyone should break even over time. Within \u00b11\u03c3 is ordinary; beyond \u00b12\u03c3 is rare.")
+
+        const measured = selectedMembers().map(person => ({person: person, luck: luckOf(person)}))
+        const rows = measured.filter(row => row.luck.flips >= MIN_LUCK_FLIPS).sort((a, b) => b.luck.z - a.luck.z)
+        const skipped = measured.filter(row => row.luck.flips > 0 && row.luck.flips < MIN_LUCK_FLIPS).length
+        const at = z => 50 + Math.max(-LUCK_RANGE, Math.min(LUCK_RANGE, z)) / LUCK_RANGE * 50
+
+        const scale = "<div class='luckRow'><div></div><div class='luckScale'></div><div></div><div></div></div>"
+
+        document.getElementById("luckRows").innerHTML = scale + rows.map(row => {
+            const z = row.luck.z
+            return "<div class='luckRow'>"
+                + "<div class='srcName'>" + who(row.person) + "</div>"
+                + "<div class='luckBar'><div class='luckFill " + (z >= 0 ? "lucky" : "unlucky") + "' style='left:" + Math.min(50, at(z)).toFixed(3)
+                + "%; width:" + Math.abs(at(z) - 50).toFixed(3) + "%'></div></div>"
+                + "<div class='luckValue'>" + toned(sigmas(z)) + " <span class='faint'>" + verdict(z) + "</span></div>"
+                + "<div class='luckDetail'>"
+                + "<span>" + number(row.luck.flips) + " flips</span>"
+                + "<span>" + number(row.luck.wins) + (row.luck.wins === 1 ? " win" : " wins") + "</span>"
+                + "<span>" + number(row.luck.losses) + (row.luck.losses === 1 ? " loss" : " losses") + "</span>"
+                + "<span>" + toned(signed(row.luck.net)) + "</span>"
+                + "</div>"
+                + "</div>"
+        }).join("")
+
+        const scaleBox = document.querySelector("#luckRows .luckScale")
+        const perSigma = scaleBox.clientWidth / (2 * LUCK_RANGE)
+        const ticks = perSigma >= 34 ? [-3, -2, -1, 0, 1, 2, 3] : perSigma >= 12 ? [-3, 0, 3] : [0]
+        scaleBox.innerHTML = ticks.map(z => "<span style='left:" + at(z) + "%'>" + (z > 0 ? "+" : "") + z + "σ"
+            + "<small>" + LUCK_COVERAGE[Math.abs(z)] + "</small></span>").join("")
+
+        const when = state.period === null ? "" : " in this period"
+        document.getElementById("luckNote").textContent = rows.length === 0
+            ? (state.period === null ? "Nobody here has enough flips yet to measure." : "Nobody here has enough flips in this period to measure.")
+            : skipped ? skipped + (skipped === 1 ? " member has" : " members have") + " fewer than " + MIN_LUCK_FLIPS + " flips" + when + ", too few to judge, so they aren't shown." : ""
+    }
+
+    const economies = new Map()
+    const economySeries = () => {
+        const key = viewKey()
+        if (economies.has(key)) return economies.get(key)
+        const series = people.map(person => viewOf(person).points)
+        const filled = series.filter(points => points.length > 0)
+        const economy = {
+            series: series,
+            members: filled.length,
+            whole: [Math.min(...filled.map(points => points[0].t)), Math.max(...filled.map(points => points[points.length - 1].t))],
+        }
+        economies.set(key, economy)
+        return economy
+    }
+    const sampleEconomy = (count, from, to, extra) => {
+        const {series} = economySeries()
+        const cursor = series.map(points => lastAtOrBefore(points, from))
+        const samples = []
+        const times = Array.from({length: count}, (unused, step) => from + (to - from) * step / (count - 1))
+            .concat((extra || []).filter(time => time > from && time < to))
+            .sort((a, b) => a - b)
+
+        for (const at of times) {
+            const balances = series.map((points, index) => {
+                while (cursor[index] + 1 < points.length && points[cursor[index] + 1].t <= at) cursor[index]++
+                return cursor[index] === -1 ? null : points[cursor[index]].v
+            })
+            const standing = index => balances[index] === null ? 0 : balances[index]
+            const order = balances.map((balance, index) => index)
+                .sort((a, b) => standing(b) - standing(a) || a - b)
+            const held = order.map(index => Math.max(0, standing(index)))
+            const total = held.reduce((sum, balance) => sum + balance, 0)
+            const shareOf = size => total ? held.slice(0, size).reduce((sum, balance) => sum + balance, 0) / total : 0
+            const ranks = balances.map(() => 0)
+            let place = 0
+            let last = null
+            order.forEach((index, position) => {
+                if (last === null || standing(index) !== last) {
+                    place = position + 1
+                    last = standing(index)
+                }
+                ranks[index] = place
+            })
+            samples.push({at: at, balances: balances, total: total, order: order, ranks: ranks,
+                tied: order.filter(index => standing(index) === 0).length,
+                shares: CONCENTRATION_BANDS.map(band => shareOf(band.size))})
+        }
+        return samples
+    }
+    const shareOfMember = (sample, member) => sample.total && sample.balances[member] !== null
+        ? Math.max(0, sample.balances[member]) / sample.total
+        : null
+
+    const drawConcentration = () => {
+        const svg = document.getElementById("concentrationChart")
+        const readout = document.getElementById("concentrationReadout")
+        const legend = document.getElementById("concentrationLegend")
+        const {whole} = economySeries()
+        const span = state.ranges.concentration || whole
+        const samples = sampleEconomy(CONCENTRATION_SAMPLES, span[0], span[1])
+        const latest = samples[samples.length - 1]
+        const width = svg.parentElement.clientWidth || 900
+        const height = svg.parentElement.clientHeight || 460
+        const pad = {left: 52, right: 16, top: 12, bottom: 24}
+        const axis = timeAxis(span[0], span[1], width, height, pad)
+        const member = state.mode === "person" ? memberIndex(state.person) : null
+        const ceiling = 1
+        const toY = share => height - pad.bottom - Math.min(share, ceiling) / ceiling * (height - pad.bottom - pad.top)
+        const x = sample => axis.toX(sample.at).toFixed(1)
+
+        const grid = [0, .25, .5, .75, 1].map(fraction => {
+            const y = toY(fraction * ceiling).toFixed(1)
+            return horizontal(pad, width, y) + leftLabel(pad, y, percent(fraction * ceiling))
+        }).join("")
+
+        let body = ""
+        let describe = null
+
+        if (member !== null) {
+            setHead("concentration", nameHtml(state.person) + "'s share of all points",
+                "How much of the server's points " + nameText(state.person) + " held over time. Hover to see their share and rank at any moment.")
+            const runs = []
+            let run = []
+            samples.forEach(sample => {
+                const share = shareOfMember(sample, member)
+                if (share === null) {
+                    if (run.length) runs.push(run)
+                    run = []
+                    return
+                }
+                run.push({sample: sample, share: share})
+            })
+            if (run.length) runs.push(run)
+            body = runs.map(points => {
+                const line = points.map((point, index) => (index ? "L" : "M") + x(point.sample) + " " + toY(point.share).toFixed(1)).join(" ")
+                const area = line + " L" + x(points[points.length - 1].sample) + " " + toY(0) + " L" + x(points[0].sample) + " " + toY(0) + " Z"
+                return "<path d='" + area + "' fill='rgba(122, 162, 247, .30)'></path>"
+                    + "<path d='" + line + "' fill='none' stroke='" + ACCENT + "' stroke-width='1.8' stroke-linejoin='round'></path>"
+            }).join("")
+            describe = sample => {
+                const share = shareOfMember(sample, member)
+                return [longDay(sample.at)].concat(share === null ? ["Not active yet"]
+                    : [percent(share) + " of all points", "Rank " + sample.ranks[member] + " of " + sample.order.length])
+            }
+            legend.innerHTML = "<span><i style='background:" + ACCENT + "'></i>" + nameHtml(state.person) + "</span>"
+        } else if (state.mode === "top" || state.mode === "some") {
+            const members = selectedMembers().map(memberIndex)
+                .sort((a, b) => (shareOfMember(latest, b) || 0) - (shareOfMember(latest, a) || 0))
+            setHead("concentration", state.mode === "some" ? chosenTitle() + " share of all points"
+                : "Share of all points: top " + members.length + " by " + topPhrase(),
+                (state.mode === "some" ? "Each selected member's" : "Each of the top " + members.length + " members'")
+                + " share of the server's points over time, stacked, with everyone else above them. Hover to see the split at any moment.")
+            const edges = samples.map(sample => {
+                let running = 0
+                return members.map(index => {
+                    const low = running
+                    running += shareOfMember(sample, index) || 0
+                    return {low: low, high: running}
+                }).concat([{low: running, high: Math.max(running, 1)}])
+            })
+            const layer = layerIndex => samples.map((sample, step) => (step ? "L" : "M") + x(sample) + " " + toY(edges[step][layerIndex].high).toFixed(1)).join(" ")
+                + " " + samples.map((sample, step) => ({sample: sample, step: step})).reverse()
+                    .map(entry => "L" + x(entry.sample) + " " + toY(edges[entry.step][layerIndex].low).toFixed(1)).join(" ") + " Z"
+            body = members.map((index, place) => "<path d='" + layer(place) + "' fill='" + PALETTE[place % PALETTE.length]
+                + "' fill-opacity='.75' data-hover='" + hoverAttr(nameText(people[index])) + "'></path>").join("")
+                + "<path d='" + layer(members.length) + "' fill='rgba(154, 161, 177, .12)' data-hover='Everyone else'></path>"
+            describe = sample => {
+                const split = members.map(index => ({index: index, share: shareOfMember(sample, index) || 0}))
+                    .sort((a, b) => b.share - a.share)
+                const rest = Math.max(0, 1 - split.reduce((sum, entry) => sum + entry.share, 0))
+                return [longDay(sample.at)].concat(split.slice(0, 4).map(entry => nameText(people[entry.index]) + " " + percent(entry.share)))
+                    .concat(["Everyone else " + percent(rest)])
+            }
+            legend.innerHTML = members.map((index, place) => "<span><i style='background:" + PALETTE[place % PALETTE.length] + "'></i>"
+                + nameHtml(people[index]) + "</span>").join("")
+                + "<span><i style='background: rgba(154, 161, 177, .35)'></i>Everyone else</span>"
+        } else {
+            setHead("concentration", "Wealth concentration", "The share of all points held by the richest 1, 3 and 10 members over time. Hover to see who was on top.")
+            body = CONCENTRATION_BANDS.map((band, index) => {
+                const line = samples.map((sample, step) => (step ? "L" : "M") + x(sample) + " " + toY(sample.shares[index]).toFixed(1)).join(" ")
+                const area = line + " L" + axis.toX(span[1]).toFixed(1) + " " + toY(0) + " L" + axis.toX(span[0]).toFixed(1) + " " + toY(0) + " Z"
+                return "<path d='" + area + "' fill='" + band.fill + "'></path>"
+                    + "<path d='" + line + "' fill='none' stroke='" + band.stroke + "' stroke-width='1.6' stroke-linejoin='round'></path>"
+            }).join("")
+            describe = sample => [longDay(sample.at)]
+                .concat(CONCENTRATION_BANDS.map((band, index) => band.label + " " + percent(sample.shares[index])).reverse())
+                .concat(sample.order.length ? ["On top: " + nameText(people[sample.order[0]])] : [])
+            legend.innerHTML = CONCENTRATION_BANDS.slice().reverse()
+                .map(band => "<span><i style='background:" + band.stroke + "'></i>" + band.label + "</span>").join("")
+        }
+
+        svg.setAttribute("viewBox", "0 0 " + width + " " + height)
+        svg.innerHTML = clipTo("concentrationClip", pad, width, height) + grid + axis.markup
+            + "<g clip-path='url(#concentrationClip)'>" + body + "</g>" + hairLine("concentrationHair", pad, height)
+        readout.innerHTML = divided(describe(latest))
+
+        attachNavigation({
+            key: "concentration", svg: svg, whole: whole, width: width, height: height, pad: pad, redraw: drawConcentration,
+            hover: clientX => {
+                const sample = samples[sampleAt(svg, clientX, width, pad, samples.length)]
+                moveHair("concentrationHair", x(sample))
+                readout.innerHTML = divided(describe(sample))
+            },
+            leave: () => {
+                hideHair("concentrationHair")
+                readout.innerHTML = divided(describe(latest))
+            },
+        })
+    }
+
+    const drawRankings = () => {
+        const svg = document.getElementById("rankingsChart")
+        const readout = document.getElementById("rankingsReadout")
+        const economy = economySeries()
+        const span = state.ranges.rankings || economy.whole
+        const era = state.hideRecovered ? null : eraAt
+        const firstSeen = economy.series.map(points => points.length ? points[0].t : null)
+        const addedAtEra = era === null ? [] : firstSeen.filter(time => time !== null && time >= era && time - era <= ERA_JOIN_MS)
+        const eraSettled = addedAtEra.length ? Math.max(...addedAtEra) : era
+        const samples = sampleEconomy(RANKING_SAMPLES, span[0], span[1], era === null ? [] : [era - 1, eraSettled])
+        const latest = samples[samples.length - 1]
+        const capped = state.mode === "top"
+        const capLanes = state.topCount + 1
+        const single = state.mode === "person"
+        const member = single ? memberIndex(state.person) : null
+        const population = Math.max(2, ...samples.map(sample => Math.max(...sample.ranks)))
+        const worst = single ? Math.max(1, ...samples.map(sample => sample.ranks[member] || 0)) : 0
+        const fittedFloor = capped ? capLanes
+            : single ? worst + Math.max(1, Math.ceil(worst * RANK_BUFFER_SHARE))
+            : population
+        const floorRank = !capped && holdingScale("rankings") && heldScales.rankings ? Math.max(heldScales.rankings, fittedFloor) : fittedFloor
+        heldScales.rankings = floorRank
+        const byLatestRank = (a, b) => (latest.ranks[a] || floorRank + 1) - (latest.ranks[b] || floorRank + 1)
+        const tracked = single ? [member]
+            : capped ? topMembers().map(memberIndex)
+            : state.mode === "some" ? chosenMembers().map(memberIndex)
+            : people.map(memberIndex).filter(index => samples.some(sample => sample.ranks[index])).sort(byLatestRank)
+
+        const width = svg.parentElement.clientWidth || 900
+        const height = svg.parentElement.clientHeight || 460
+        const labelled = capped || single || (height - 38) / Math.max(1, floorRank - 1) >= MIN_LABEL_GAP_PX
+        const pad = {left: 44, right: labelled ? 150 : 24, top: 14, bottom: 24}
+        const plotHeight = height - pad.top - pad.bottom
+        const axis = timeAxis(span[0], span[1], width, height, pad)
+        const toY = rank => pad.top + (Math.min(rank, floorRank) - 1) / (floorRank - 1) * plotHeight
+        const dotRadius = single ? 4 : labelled ? 3.5 : Math.max(1.2, Math.min(3.5, plotHeight / (floorRank - 1) / 2))
+        const eraX = era !== null && era > span[0] && era < span[1] ? axis.toX(era) : null
+
+        if (single) {
+            setHead("rankings", nameHtml(state.person) + "'s rank over time", "Where " + nameText(state.person) + " placed among all members over time. Hover to see their rank at any moment.")
+        } else if (capped) {
+            setHead("rankings", "Leaderboard over time", "Rank history for the top " + tracked.length
+                + " by " + topPhrase() + ". A line drops into the bottom lane while that member is outside the top " + state.topCount
+                + ". Hover a line or name to follow one member, and hover anywhere to see the standings at that moment.")
+        } else if (state.mode === "some") {
+            setHead("rankings", chosenTitle() + " rank over time", "Rank history for " + tracked.length
+                + " selected members, placed among everyone. Members with no points yet share last place"
+                + (addedAtEra.length ? ", so the " + addedAtEra.length + " with no history before BCE climb out of that tie when live tracking begins" : "")
+                + ". Hover a line to follow one member, and hover anywhere to see the standings at that moment.")
+        } else {
+            setHead("rankings", "Every member's rank over time", "Rank history for all " + tracked.length
+                + " members. Members with no points yet count as zero and share last place"
+                + (addedAtEra.length ? ", so the " + addedAtEra.length + " with no history before BCE climb out of that tie when live tracking begins" : "")
+                + ". Hover a line to follow one member, and hover anywhere to see the standings at that moment.")
+        }
+
+        let laneRanks = Array.from({length: capLanes}, (unused, index) => index + 1)
+        if (!capped) {
+            const step = Math.max(1, Math.round(niceStep(floorRank - 1, Math.max(2, Math.round(plotHeight / RANK_TICK_GAP_PX)))))
+            const limit = Math.min(floorRank, population)
+            laneRanks = [1]
+            for (let rank = step === 1 ? 2 : step; rank <= limit; rank += step) laneRanks.push(rank)
+            if (limit - laneRanks[laneRanks.length - 1] >= step / 2) laneRanks.push(limit)
+        }
+        const laneMarkup = laneRanks.map(rank => {
+            const y = toY(rank).toFixed(1)
+            return horizontal(pad, width, y) + leftLabel(pad, y, capped && rank === capLanes ? capLanes + "+" : "#" + rank)
+        }).join("")
+
+        const eraMarker = eraX === null ? ""
+            : "<line class='era' x1='" + eraX.toFixed(1) + "' x2='" + eraX.toFixed(1) + "' y1='" + pad.top + "' y2='" + (height - pad.bottom) + "'></line>"
+                + (eraX - pad.left < 24
+                    ? "<text class='eraLabel' x='" + (eraX + 4).toFixed(1) + "' y='" + (pad.top + 10) + "'>BCE</text>"
+                    : "<text class='eraLabel' text-anchor='end' x='" + (eraX - 4).toFixed(1) + "' y='" + (pad.top + 10) + "'>BCE</text>")
+
+        const lines = tracked.map((index, place) => {
+            const colour = single ? ACCENT : PALETTE[place % PALETTE.length]
+            let inside = ""
+            let outside = ""
+            for (let step = 1; step < samples.length; step++) {
+                const before = samples[step - 1].ranks[index]
+                const after = samples[step].ranks[index]
+                if (!before || !after) continue
+                const piece = "M" + axis.toX(samples[step - 1].at).toFixed(1) + " " + toY(before).toFixed(1)
+                    + "L" + axis.toX(samples[step].at).toFixed(1) + " " + toY(after).toFixed(1)
+                const recount = era !== null && samples[step - 1].at < era && samples[step].at >= era
+                if (recount || (capped && (before >= capLanes || after >= capLanes))) outside += piece
+                else inside += piece
+            }
+            const endRank = latest.ranks[index]
+            const outsideTop = capped && endRank >= capLanes
+            const left = people[index]
+            const shown = nameText(left)
+            const name = shown.length > 18 ? shown.slice(0, 17) + "\u2026" : shown
+            const end = !endRank ? "" : "<circle cx='" + axis.toX(span[1]).toFixed(1) + "' cy='" + toY(endRank).toFixed(1) + "' r='" + dotRadius.toFixed(1) + "' fill='" + colour + "'></circle>"
+                + (labelled && !outsideTop ? "<text x='" + (axis.toX(span[1]) + 10).toFixed(1) + "' y='" + (toY(endRank) + 4).toFixed(1)
+                    + "' fill='" + (departed(left) ? "#7d8492" : colour) + "'" + (departed(left) ? " text-decoration='line-through'" : "")
+                    + " font-size='12'>" + escape(name) + "</text>" : "")
+            return "<g class='rank' data-hover='" + hoverAttr(shown) + "'>"
+                + "<path class='hit' d='" + inside + outside + "'></path>"
+                + (outside ? "<path d='" + outside + "' fill='none' stroke='" + colour + "' stroke-width='1.4' opacity='.5'></path>" : "")
+                + "<path d='" + inside + "' fill='none' stroke='" + colour + "' stroke-width='" + (single ? 2.6 : capped ? 2.2 : 1.5) + "' stroke-linejoin='round'></path>"
+                + end + "</g>"
+        }).join("")
+
+        const belowTop = capped ? tracked.filter(index => latest.ranks[index] >= capLanes).length : 0
+        const overflowLabel = belowTop === 0 ? ""
+            : "<text class='axis' x='" + (axis.toX(span[1]) + 10).toFixed(1) + "' y='" + (toY(capLanes) + 4).toFixed(1) + "'>"
+                + belowTop + " outside the top " + state.topCount + "</text>"
+
+        svg.setAttribute("viewBox", "0 0 " + width + " " + height)
+        svg.innerHTML = laneMarkup + axis.markup + lines + eraMarker + overflowLabel + hairLine("rankingsHair", pad, height)
+
+        const describe = sample => [longDay(sample.at)].concat(single
+            ? [(sample.ranks[member] ? "Rank " + sample.ranks[member] + " of " + sample.order.length : "Not ranked yet")
+                + (sample.ranks[member] && sample.tied > 1 && sample.ranks[member] === sample.order.length - sample.tied + 1 ? ", tied with " + (sample.tied - 1) + " others" : "")]
+            : (capped ? [] : [sample.order.length + " members ranked"]
+                .concat(sample.tied > 1 ? [sample.tied + " tied at 0 points"] : []))
+                .concat(sample.order.slice(0, 5).map((index, place) => (place + 1) + ". " + nameText(people[index]))))
+        readout.innerHTML = divided(describe(latest))
+
+        attachNavigation({
+            key: "rankings", svg: svg, whole: economy.whole, width: width, height: height, pad: pad, redraw: drawRankings,
+            hover: clientX => {
+                const box = svg.getBoundingClientRect()
+                const time = span[0] + ((clientX - box.left) / box.width * width - pad.left) / Math.max(1, width - pad.left - pad.right) * (span[1] - span[0])
+                const sample = samples.reduce((nearest, candidate) => Math.abs(candidate.at - time) < Math.abs(nearest.at - time) ? candidate : nearest)
+                moveHair("rankingsHair", axis.toX(sample.at).toFixed(1))
+                readout.innerHTML = divided(describe(sample))
+            },
+            leave: () => {
+                hideHair("rankingsHair")
+                readout.innerHTML = divided(describe(latest))
+            },
+        })
+    }
+
+    const VIEW_DRAWERS = {
+        history: () => {
+            drawStats()
+            drawChart()
+            applyFilters()
+        },
+        sources: drawSources,
+        luck: drawLuck,
+        concentration: drawConcentration,
+        rankings: drawRankings,
+    }
+    const viewPanels = Array.from(document.querySelectorAll(".view"))
+    const tabs = Array.from(document.querySelectorAll(".tab"))
+    let activeView = "history"
+    const eventsCard = document.getElementById("eventsCard")
+    const drawActiveView = () => {
+        VIEW_DRAWERS[activeView]()
+        if (activeView === "sources" || activeView === "luck") applyFilters()
+    }
+    const showView = name => {
+        activeView = name
+        tabs.forEach(tab => { tab.className = tab.dataset.view === name ? "tab on" : "tab" })
+        viewPanels.forEach(panel => { panel.hidden = panel.dataset.view !== name })
+        const slot = document.getElementById(name + "Events")
+        if (slot) slot.appendChild(eventsCard)
+        drawActiveView()
+    }
+    tabs.forEach(tab => { tab.onclick = () => showView(tab.dataset.view) })
+    const scaleButtons = Array.from(document.querySelectorAll("[data-scale]"))
+    scaleButtons.forEach(button => {
+        button.onclick = () => {
+            sourcesScale = button.dataset.scale
+            scaleButtons.forEach(other => { other.className = other === button ? "tool on" : "tool" })
+            drawSources()
+        }
+    })
+    window.addEventListener("resize", () => {
+        if (activeView !== "history") VIEW_DRAWERS[activeView]()
+    })
+
+    refreshSortHeads()
+    drawMeta()
+    drawPeople()
+    drawStats()
+    drawChart()
+    applyFilters()
+}
+
+const GATE_TITLES = {
+    401: "You need a new link",
+    429: "Too many requests",
+    503: "The bot is still starting up",
+}
+
+const failed = (error) => {
+    document.querySelector("header").hidden = true
+    document.querySelector(".layout").hidden = true
+    document.getElementById("gateTitle").textContent = GATE_TITLES[error.status] || "Could not load the point history"
+    const body = document.getElementById("gateBody")
+    if (error.status === 401) {
+        body.innerHTML = "Your link has expired or was already opened. Run <code>!history</code> in Discord for a new one."
+    } else {
+        body.textContent = error.message
+    }
+    document.getElementById("gate").hidden = false
+}
+
+const refused = (response) => response.text()
+    .catch(() => "")
+    .then(message => Promise.reject(Object.assign(
+        new Error(message || response.status + " from " + response.url), {status: response.status})))
+
+const linkToken = () => {
+    const found = /(?:^|&)t=([^&]+)/.exec(location.hash.slice(1))
+    if (found === null) return undefined
+
+    history.replaceState(null, "", location.pathname + location.search)
+    return decodeURIComponent(found[1])
+}
+
+const signIn = (token) => token === undefined
+    ? Promise.resolve()
+    : fetch(SESSION_ROUTE, {method: "POST", headers: {"Authorization": "Bearer " + token}})
+        .then(response => response.ok ? undefined : refused(response))
+
+signIn(linkToken())
+    .then(() => fetch(POINT_HISTORY_ROUTE))
+    .then(response => response.ok ? response.json() : refused(response))
+    .then(start)
+    .catch(failed)
+</script>
+</body>
+</html>

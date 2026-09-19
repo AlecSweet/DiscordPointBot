@@ -1,12 +1,13 @@
 import { Mutex, withTimeout } from "async-mutex";
-import { deleteChallenge, getChallenge, insertChallenge, updateChallenge } from "../db/challenge";
+import { getChallenge, insertChallenge, updateChallenge } from "../db/challenge";
 import isValidUserArg from "../util/isValidUserArg";
 import { parseTarget, parsePoints } from "../util/args";
 import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "../util/userUtil";
 import getRandomValues from 'get-random-values'
 import { Guild, Message } from "discord.js";
-import { cancelChallenge } from "../util/challengeUtil";
+import { cancelChallenge, payChallenge } from "../util/challengeUtil";
+import { whileSettling } from "../util/settling";
 import { assignDustedRole } from "../events/assignMostPointsRole";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
@@ -39,19 +40,21 @@ const challenge = textCommand({
             }
         }
 
-        if (await getChallenge(ctx.authorId)) {
-            await message.reply({content: `Only one challenge at a time${process.env.NOPPERS_EMOJI}`})
-            return
-        }
-
         const challengePoints = await withUserLock(ctx.authorId, message, async (user) => {
+            if (await getChallenge(user.id)) {
+                await message.reply({content: `Only one challenge at a time${process.env.NOPPERS_EMOJI}`})
+                return undefined
+            }
+
             const cPoints = await parsePoints(args[0], user, message, 'challenge')
             if (cPoints === undefined) {
                 return undefined
             }
 
-            await insertChallenge({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
-            await updateUser(user.id, {points: inc(-cPoints)}, {...ctx.origin, reason: "challengeEscrow"})
+            await whileSettling(async () => {
+                await insertChallenge({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
+                await updateUser(user.id, {points: inc(-cPoints)}, {...ctx.origin, reason: "challengeEscrow"})
+            })
             return cPoints
         })
 
@@ -118,13 +121,15 @@ const challenge = textCommand({
                                 challengePoints :
                                 targetUser.points
 
-                        if(acceptBet < challengePoints){
-                            await updateUser(ctx.authorId, {points: inc(challengePoints - acceptBet)}, {...ctx.origin, reason: "challengeRefund"})
-                            await updateChallenge(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
-                        } else {
-                            await updateChallenge(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
-                        }
-                        await updateUser(targetUser.id, {points: inc(-acceptBet)}, {...ctx.origin, reason: "challengeEscrow"})
+                        await whileSettling(async () => {
+                            if(acceptBet < challengePoints){
+                                await updateUser(ctx.authorId, {points: inc(challengePoints - acceptBet)}, {...ctx.origin, reason: "challengeRefund"})
+                                await updateChallenge(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
+                            } else {
+                                await updateChallenge(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
+                            }
+                            await updateUser(targetUser.id, {points: inc(-acceptBet)}, {...ctx.origin, reason: "challengeEscrow"})
+                        })
                         return {targetUser: targetUser, acceptBet: acceptBet}
                     })
 
@@ -177,9 +182,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.channel.send({
             content: `<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await updateUser(ownerId, {points: inc(acceptBet*2), challengePointsWon: inc(acceptBet), challengesWon: inc(1)}, {...origin, reason: "challengePayout"})
-        const user = await updateUser(targetId, {challengePointsLost: inc(acceptBet), challengesLost: inc(1)})
-        await deleteChallenge(ownerId)
+        const user = await payChallenge(ownerId, ownerId, targetId, acceptBet, origin)
         if (acceptBet >= 100 && user.points < 5) {
             await assignDustedRole(guild, user.id)
         }
@@ -187,9 +190,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         await acceptMessage.channel.send({
             content: `<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
-        await updateUser(targetId, {points: inc(acceptBet*2), challengePointsWon: inc(acceptBet), challengesWon: inc(1)}, {...origin, reason: "challengePayout"})
-        const user = await updateUser(ownerId, {challengePointsLost: inc(acceptBet), challengesLost: inc(1)})
-        await deleteChallenge(ownerId)
+        const user = await payChallenge(ownerId, targetId, ownerId, acceptBet, origin)
         if (acceptBet >= 100 && user.points < 5) {
             await assignDustedRole(guild, user.id)
         }

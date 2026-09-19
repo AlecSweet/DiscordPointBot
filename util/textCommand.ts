@@ -1,6 +1,7 @@
 import { Guild, Message, TextChannel } from "discord.js"
 import { ICallback, ICommand } from "../wokTypes"
 import { IPointOrigin } from "../db/pointEvent"
+import { isShuttingDown } from "./shuttingDown"
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -20,6 +21,11 @@ const textCommand = (
     ...spec,
     callback: async (options: ICallback) => {
         const { message, args, guild } = options
+
+        if (isShuttingDown()) {
+            await message.reply({content: `Restarting, try that again in a minute ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
 
         if (message.channel.type !== "GUILD_TEXT") {
             await message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})

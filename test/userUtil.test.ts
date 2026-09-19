@@ -1,11 +1,19 @@
 import { MongoMemoryServer } from "mongodb-memory-server"
 import mongoose from "mongoose"
 import userModel from "../db/user"
-import pointEventModel, { IPointChange } from "../db/pointEvent"
+import pointEventModel, { allPointEvents, clearPointEvents, IPointChange } from "../db/pointEvent"
 import { settleUser, startUserActivity, disableUserActivity, updateUser, inc, set } from "../util/userUtil"
 import { updateUserWin, updateUserLoss } from "../util/flipUtil"
 import { claimDaily, claimWeekly, claimMonthly, claimYearly, claimByName, claimNames, isClaimName } from "../util/claimUtil"
 import { cancelWar } from "../util/warUtil"
+import { checkAndCancelMaroonedRps } from "../util/rpsUtil"
+import rpsModel from "../db/rps"
+import { cancelChallenge, checkAndCancelMaroonedChallenges, payChallenge } from "../util/challengeUtil"
+import { setShuttingDown } from "../util/shuttingDown"
+import { settled, whileSettling } from "../util/settling"
+import challengeModel from "../db/challenge"
+import retryWrite from "../db/retryWrite"
+import sleep from "../util/sleep"
 import { counterMismatches, openingBalances, seedOpeningBalances, takeSnapshot } from "../scripts/seedPointEvents"
 import { eventLine, invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
 import { pendingRenames, renameMartingale } from "../scripts/renameMartingaleEvents"
@@ -17,6 +25,7 @@ const FLIP: IPointChange = {reason: "flip", command: "flip"}
 const GIFT: IPointChange = {reason: "giftSent", command: "give"}
 const RECEIVED: IPointChange = {reason: "giftReceived", command: "give"}
 const CLAIM = {command: "claim"}
+const channelOnly = () => mongoose.connection.collection("wokcommands-channel-commands")
 
 let failures = 0
 let passes = 0
@@ -715,6 +724,108 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("target refunded", `${target[0]?.delta} ${target[0]?.balance} ${target[0]?.reason} ${target[0]?.command}`, "30 30 warRefund war")
 }},
 
+{name: "ledger: a marooned rps refunds both sides under rps, and spares a game that just started", fn: async () => {
+    await seed("rpsOwner", {points: 0})
+    await seed("rpsTarget", {points: 0})
+    await seed("rpsFresh", {points: 0})
+    await rpsModel.collection.deleteMany({})
+    await rpsModel.collection.insertOne({ownerId: "rpsOwner", ownerBet: 50, acceptId: "rpsTarget", acceptBet: 30,
+        startDate: new Date(Date.now() - 10 * MINUTE)})
+    await rpsModel.collection.insertOne({ownerId: "rpsFresh", ownerBet: 20, acceptId: "", acceptBet: 0,
+        startDate: new Date()})
+
+    await checkAndCancelMaroonedRps()
+
+    eq("the owner got their stake back", (await settleUser("rpsOwner")).points, 50)
+    eq("and so did the accepter", (await settleUser("rpsTarget")).points, 30)
+    eq("the stale row is gone", await rpsModel.collection.countDocuments({ownerId: "rpsOwner"}), 0)
+
+    const owner = await pointEventModel.find({userId: "rpsOwner"}).lean()
+    eq("recorded against rps, not another game",
+        `${owner[0]?.delta} ${owner[0]?.reason} ${owner[0]?.command}`, "50 rpsRefund rps")
+
+    eq("the game that just started keeps its stake", (await settleUser("rpsFresh")).points, 0)
+    eq("and keeps its row", await rpsModel.collection.countDocuments({ownerId: "rpsFresh"}), 1)
+}},
+
+{name: "settlement: a cancel refunds what the row says now, not the copy the sweep read earlier", fn: async () => {
+    await seed("staleOwner", {points: 0})
+    await seed("staleTarget", {points: 0})
+    await challengeModel.collection.deleteMany({})
+    await challengeModel.collection.insertOne({ownerId: "staleOwner", ownerBet: 40, acceptId: "staleTarget", acceptBet: 40, startDate: new Date()})
+
+    await cancelChallenge("staleOwner", {ownerId: "staleOwner", ownerBet: 40, acceptId: "", acceptBet: 0, startDate: new Date()})
+
+    eq("the owner got their stake back", (await settleUser("staleOwner")).points, 40)
+    eq("and so did the accepter the sweep had not seen yet", (await settleUser("staleTarget")).points, 40)
+    eq("the row is gone", await challengeModel.collection.countDocuments({ownerId: "staleOwner"}), 0)
+}},
+
+{name: "settlement: the marooned sweep stops itself once a restart begins", fn: async () => {
+    await seed("sweptOwner", {points: 0})
+    await challengeModel.collection.deleteMany({})
+    await challengeModel.collection.insertOne({ownerId: "sweptOwner", ownerBet: 70, acceptId: "", acceptBet: 0,
+        startDate: new Date(Date.now() - 10 * MINUTE)})
+
+    setShuttingDown(true)
+    try {
+        await checkAndCancelMaroonedChallenges()
+    } finally {
+        setShuttingDown(false)
+    }
+
+    eq("nothing was refunded on the way out", (await settleUser("sweptOwner")).points, 0)
+    eq("the row is left for the next run", await challengeModel.collection.countDocuments({ownerId: "sweptOwner"}), 1)
+
+    await checkAndCancelMaroonedChallenges()
+    eq("which picks it up and refunds it", (await settleUser("sweptOwner")).points, 70)
+}},
+
+{name: "settlement: a payout hands over the pot and closes the row", fn: async () => {
+    await seed("payWinner", {points: 0})
+    await seed("payLoser", {points: 0})
+    await challengeModel.collection.deleteMany({})
+    await challengeModel.collection.insertOne({ownerId: "payWinner", ownerBet: 60, acceptId: "payLoser", acceptBet: 60, startDate: new Date()})
+
+    const loser = await payChallenge("payWinner", "payWinner", "payLoser", 60, {command: "challenge"})
+
+    eq("the winner takes both stakes", (await settleUser("payWinner")).points, 120)
+    eq("the loser is left with nothing", loser.points, 0)
+    eq("the row is gone", await challengeModel.collection.countDocuments({ownerId: "payWinner"}), 0)
+}},
+
+{name: "settlement: shutdown waits for anything still settling", fn: async () => {
+    let finished = false
+    const running = whileSettling(async () => { await sleep(120); finished = true })
+
+    const drained = settled().then(() => finished)
+    eq("the drain only finishes once the settlement has", await drained, true)
+    await running
+}},
+
+{name: "settlement: a failing cleanup write is retried before it gives up", fn: async () => {
+    let attempts = 0
+    const flaky = () => { attempts++; return attempts < 2 ? Promise.reject(new Error("dropped")) : Promise.resolve() }
+    eq("a write that fails once still goes through", `${await retryWrite(flaky, "flaky write")} ${attempts}`, "true 2")
+
+    let tries = 0
+    const broken = () => { tries++; return Promise.reject(new Error("dropped")) }
+    eq("a write that never lands is reported, not swallowed", `${await retryWrite(broken, "broken write")} ${tries}`, "false 3")
+}},
+
+{name: "ledger: a load that fails is not remembered, so the next read tries again", fn: async () => {
+    await pointEventModel.collection.insertOne({userId: "cacheRetry", seq: 1, delta: 10, balance: 110,
+        reason: "flip", createdAt: new Date()})
+
+    const find = pointEventModel.find
+    pointEventModel.find = (() => { throw new Error("no connection") }) as unknown as typeof pointEventModel.find
+    const refused = await allPointEvents().then(() => false).catch(() => true)
+    pointEventModel.find = find
+
+    eq("the read that could not reach mongo fails", refused, true)
+    eq("the read after it loads the ledger rather than failing forever", (await allPointEvents()).length, 1)
+}},
+
 {name: "ledger: each user's changes are uniquely numbered by an index", fn: async () => {
     await pointEventModel.init()
     const indexes = await pointEventModel.collection.indexes()
@@ -867,22 +978,30 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         {userId: "ladder", seq: -1, delta: -50, balance: null, reason: "martingale", backfilled: true},
         {userId: "ladder", seq: 3, delta: -5, balance: 105, reason: "flip", command: "flip"},
     ])
+    await channelOnly().deleteMany({})
+    await channelOnly().insertOne({guildId: "111", command: "martin", channels: ["222"]})
 
     const pending = await pendingRenames()
     eq("the old reason is counted by the command that wrote it",
         pending.reasons.map(entry => `${entry.command}:${entry.count}`).join(","), "martin:2,none:1")
     eq("the old command is counted on its own", pending.commands, 2)
+    eq("the channel restriction held against the old command is counted", pending.channelOnly, 1)
 
     const renamed = await renameMartingale()
-    eq("three reasons and two commands renamed", `${renamed.reasons}/${renamed.commands}`, "3/2")
+    eq("three reasons, two commands and one restriction renamed",
+        `${renamed.reasons}/${renamed.commands}/${renamed.channelOnly}`, "3/2/1")
 
     const events = await pointEventModel.find({userId: "ladder"}).sort({seq: 1}).lean()
     eq("every event is a flip now", events.map(event => event.reason).join(","), "flip,flip,flip,flip")
     eq("the ladder rungs are still told apart by their command",
         events.filter(event => event.command === "martingale").length, 2)
 
+    eq("the restriction now names the renamed command",
+        (await channelOnly().findOne({guildId: "111"}))?.command, "martingale")
+
     const after = await pendingRenames()
-    eq("a second run finds nothing to rename", `${after.reasons.length}/${after.commands}`, "0/0")
+    eq("a second run finds nothing to rename",
+        `${after.reasons.length}/${after.commands}/${after.channelOnly}`, "0/0/0")
 }},
 ]
 
@@ -898,6 +1017,7 @@ const main = async () => {
         try {
             await userModel.collection.deleteMany({})
             await pointEventModel.collection.deleteMany({})
+            clearPointEvents()
             await t.fn()
         } catch (e) {
             failures++

@@ -7,7 +7,7 @@ const BUTTON_LIFE_MS = 3 * 60 * 1000
 interface IEphemeralButton {
     title: string
     label: string
-    build: (replyTo: IReplyable) => Promise<IPanel | undefined>
+    build: (replyTo: IReplyable, userId: string) => Promise<IPanel | undefined>
 }
 
 const ephemeralButton = async (message: Message<boolean>, {title, label, build}: IEphemeralButton): Promise<void> => {
@@ -30,7 +30,7 @@ const ephemeralButton = async (message: Message<boolean>, {title, label, build}:
 
     buttonCollector.on('collect', async i => {
         await i.deferReply({ephemeral: true}).catch((err) => console.log(err))
-        const panel = await build({reply: (options) => i.editReply(options)})
+        const panel = await build({reply: (options) => i.editReply(options)}, i.user.id)
             .catch((err): undefined => { console.log(err); return undefined })
         if (panel === undefined) {
             return

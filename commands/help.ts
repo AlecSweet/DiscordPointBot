@@ -21,6 +21,7 @@ Records
   !stats       [@user]
   !top         [leaderboard] [# of users: 1-500]
   !serverStats
+  !history
 \`\`\``
 
 const help = textCommand({

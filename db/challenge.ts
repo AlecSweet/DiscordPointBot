@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import retryWrite from "./retryWrite";
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -64,6 +65,5 @@ export const insertChallenge = async (challenge: IChallenge) => {
     await new challengeModel({...(challenge)}).save().catch(err => {console.log(err)})
 }
 
-export const deleteChallenge = async (ownerId: string) => {
-    return await challengeModel.deleteOne({ownerId}).catch(err => {console.log(err)})
-}
+export const deleteChallenge = async (ownerId: string): Promise<boolean> =>
+    await retryWrite(() => challengeModel.deleteOne({ownerId}), `deleting the challenge for ${ownerId}`)

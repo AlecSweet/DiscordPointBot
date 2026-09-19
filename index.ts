@@ -1,4 +1,4 @@
-import { Client, Intents } from "discord.js";
+import { Client, Guild, Intents } from "discord.js";
 import WOKCommands from "wokcommands";
 import path from "path";
 import handleVoiceActivity, { checkInactivity } from "./events/handleVoiceActivity";
@@ -10,7 +10,16 @@ import { checkAndCancelMaroonedChallenges } from "./util/challengeUtil";
 import { checkAndCancelMaroonedWars } from "./util/warUtil";
 import assignMostPointsRole from "./events/assignMostPointsRole";
 import { checkAndCancelMaroonedRps } from "./util/rpsUtil";
+import startWebServer from "./web/server";
+import { allPointEvents } from "./db/pointEvent";
+import pointHistoryBody from "./web/pointHistoryPayload";
+import { settled } from "./util/settling";
+import { isShuttingDown, setShuttingDown } from "./util/shuttingDown";
+import sleep from "./util/sleep";
+import isGuildMember from "./util/guildMembership";
 dotenv.config()
+
+const DRAIN_MS = 25 * 1000
 
 process.on('uncaughtException', (err) => {console.log(err)})
 
@@ -27,9 +36,36 @@ const client = new Client({
         ] 
 })
 
+let currentGuild: Guild | undefined
+
+const server = startWebServer({
+    pointHistory: () => currentGuild === undefined ? Promise.resolve(undefined) : pointHistoryBody(currentGuild),
+    isMember: (userId: string) => isGuildMember(currentGuild, userId),
+})
+
+const shutDown = async () => {
+    console.log('shutting down, waiting on anything still settling')
+    setShuttingDown(true)
+    server.close()
+    await Promise.race([settled(), sleep(DRAIN_MS)])
+    client.destroy()
+    process.exit(0)
+}
+
+const onSignal = () => {
+    if (isShuttingDown()) {
+        console.log('already shutting down, still waiting on anything settling')
+        return
+    }
+
+    shutDown().catch((err) => { console.log(err); process.exit(1) })
+}
+
+process.on('SIGTERM', onSignal)
+process.on('SIGINT', onSignal)
+
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user?.tag}!`);
-    let currentGuild
     await client.guilds.fetch(`${process.env.GUILD_ID}`)
         .then((guild) => {
             currentGuild = guild
@@ -43,6 +79,7 @@ client.on('ready', async () => {
             guild.members.cache.map(member => {
                 addUserMutex(member.user.id)
             })
+            allPointEvents().catch((err) => console.log(err))
         })
 
     new WOKCommands(client, {
@@ -53,6 +90,8 @@ client.on('ready', async () => {
     })
 
     const checkInactiveMembers = new CronJob('0 */5 * * * *', async function() {
+        if (currentGuild === undefined) return
+
         await checkInactivity(currentGuild).catch((err) => console.log(err))
         await checkAndCancelMaroonedChallenges().catch((err) => console.log(err))
         await checkAndCancelMaroonedWars().catch((err) => console.log(err))

@@ -1,25 +1,31 @@
-import warModel, { deleteWar, IwarRet } from "../db/war";
+import warModel, { deleteWar, getWar, IwarRet } from "../db/war";
 import { IPointOrigin } from "../db/pointEvent";
+import { whileSettling } from "./settling";
+import sweepMarooned from "./maroonedGames";
 import { inc, updateUser } from "./userUtil";
 
-export const checkAndCancelMaroonedWars = async () => {
-    const wars = await warModel.find({})
-    if (wars) {
-        await wars.forEach(async war => {
-            if ((new Date()).getTime() - war.startDate.getTime() > 20 * 60 * 1000) {
+const MAROONED_MS = 20 * 60 * 1000
 
-                console.log('deleting marooned war')
-                await cancelWar(war.ownerId, war)
-            }
-        })
-    }
-}
+export const checkAndCancelMaroonedWars = (): Promise<void> =>
+    sweepMarooned(() => warModel.find({}), MAROONED_MS, "war", cancelWar)
 
-export const cancelWar = async (ownerId: string, war: IwarRet, origin: IPointOrigin = {command: "war"}) => {
-    await updateUser(ownerId, {points: inc(war.ownerBet)}, {...origin, reason: "warRefund"})
+export const cancelWar = (ownerId: string, war: IwarRet, origin: IPointOrigin = {command: "war"}): Promise<void> =>
+    whileSettling(async () => {
+        const current = await getWar(ownerId) ?? war
 
-    if (war.acceptId !== '') {
-        await updateUser(war.acceptId, {points: inc(war.acceptBet)}, {...origin, reason: "warRefund"})
-    }
-    await deleteWar(ownerId)
-}
+        await Promise.all([
+            updateUser(ownerId, {points: inc(current.ownerBet)}, {...origin, reason: "warRefund"}),
+            current.acceptId === '' ? Promise.resolve() :
+                updateUser(current.acceptId, {points: inc(current.acceptBet)}, {...origin, reason: "warRefund"}),
+        ])
+        await deleteWar(ownerId)
+    })
+
+export const payWar = (ownerId: string, winnerId: string, loserId: string, pot: number, stake: number, origin: IPointOrigin): Promise<void> =>
+    whileSettling(async () => {
+        await Promise.all([
+            updateUser(winnerId, {points: inc(pot), warPointsWon: inc(stake), warsWon: inc(1)}, {...origin, reason: "warPayout"}),
+            updateUser(loserId, {warPointsLost: inc(stake), warsLost: inc(1)}),
+        ])
+        await deleteWar(ownerId)
+    })
