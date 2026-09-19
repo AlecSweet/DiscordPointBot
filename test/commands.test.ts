@@ -1,9 +1,15 @@
 import { MongoMemoryServer } from "mongodb-memory-server"
+import { Guild } from "discord.js"
 import mongoose from "mongoose"
 import userModel from "../db/user"
-import pointEventModel from "../db/pointEvent"
+import pointEventModel, { allPointEvents, clearPointEvents } from "../db/pointEvent"
+import challengeModel from "../db/challenge"
+import { setShuttingDown } from "../util/shuttingDown"
 import { settleUser } from "../util/userUtil"
 import { addUserMutex, userMutexes } from "../util/userMutexes"
+import getNamedPointEvents, { displayName, memberNames } from "../util/namedPointEvents"
+import pointHistoryBody, { buildPointHistoryPayload, clearPointHistoryBody } from "../web/pointHistoryPayload"
+import isGuildMember from "../util/guildMembership"
 
 const MINUTE = 60000
 const DISCORD_MESSAGE_LIMIT = 2000
@@ -57,6 +63,7 @@ const top = require("../commands/leaderboard").default
 const help = require("../commands/help").default
 const stats = require("../commands/stats").default
 const checkPoints = require("../commands/checkPoints").default
+const challenge = require("../commands/challenge").default
 const serverStats = require("../commands/serverStats").default
 const assignMostPointsRole = require("../events/assignMostPointsRole").default
 /* eslint-enable @typescript-eslint/no-var-requires */
@@ -65,7 +72,9 @@ let roleGrantedTo: string | null = null
 
 const fakeMember = (id: string) => ({
     id: id,
-    user: {id: id},
+    user: {id: id, username: `name${id}`},
+    displayName: `user${id}`,
+    nickname: `nick${id}`,
     roles: {cache: {has: () => false}, add: async () => { roleGrantedTo = id }, remove: async () => {}}
 })
 
@@ -79,7 +88,9 @@ const discordCache = <V>(entries: [string, V][]) => {
             const mapped: T[] = []
             store.forEach(value => { mapped.push(fn(value)) })
             return mapped
-        }
+        },
+        forEach: (fn: (value: V) => void) => store.forEach(value => { fn(value) }),
+        size: store.size
     }
 }
 
@@ -90,14 +101,29 @@ const guildWith = (...ids: string[]) => {
     return {
         members: {
             cache: members,
-            fetch: async (id: string) => {
+            fetch: async (id?: string) => {
+                if (id === undefined) return members
                 if (!members.has(id)) throw new Error("Unknown Member")
                 return {displayName: `user${id}`}
             }
         },
-        roles: {cache: roles}
+        roles: {cache: roles},
+        memberCount: ids.length,
+        id: "guild"
     }
 }
+
+const guildWithOfflineMembers = (online: string[], offline: string[]) => {
+    const guild = guildWith(...online)
+    const everyone = guildWith(...online, ...offline)
+    return {
+        ...guild,
+        memberCount: online.length + offline.length,
+        members: {...guild.members, fetch: async () => everyone.members.cache}
+    }
+}
+
+const asGuild = (guild: ReturnType<typeof guildWith>) => guild as unknown as Guild
 
 const written: string[] = []
 
@@ -1010,6 +1036,234 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("no events written", await pointEventModel.countDocuments({}), 0)
 }},
 
+{name: "named events: ids give way to the member's display name, username and nickname", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "111", seq: 1, delta: -10, balance: 90, reason: "flip", command: "flip", createdAt: new Date("2024-01-01T00:00:00Z")},
+        {userId: "999", seq: 1, delta: 20, balance: 120, reason: "flip", command: "flip", createdAt: new Date("2024-01-02T00:00:00Z")},
+    ])
+
+    const events = await getNamedPointEvents(asGuild(guildWith("111", "222")))
+
+    eq("both events came back, oldest first", events.map(event => event.delta).join(","), "-10,20")
+    check("no user id is left on them", events.every(event => !("userId" in event)), JSON.stringify(events[0]))
+    eq("the member carries the two names Discord actually has",
+        `${events[0].username}/${events[0].nickname}`, "name111/nick111")
+    eq("and the nickname is the one shown", displayName(events[0]), "nick111")
+    eq("someone who has left the server has neither name",
+        `${events[1].username}/${events[1].nickname}`, "null/null")
+}},
+
+{name: "named events: members the gateway left out of the cache are still named", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "111", seq: 1, delta: -10, balance: 90, reason: "flip", command: "flip", createdAt: new Date("2024-01-01T00:00:00Z")},
+        {userId: "222", seq: 1, delta: -20, balance: 80, reason: "flip", command: "flip", createdAt: new Date("2024-01-02T00:00:00Z")},
+    ])
+
+    const guild = guildWithOfflineMembers(["111"], ["222"]) as unknown as Guild
+    const events = await getNamedPointEvents(guild)
+
+    eq("the member who was cached is named", displayName(events[0]), "nick111")
+    eq("and so is the one only a fetch knows about", displayName(events[1]), "nick222")
+}},
+
+{name: "named events: a member renaming themselves shows up right away", fn: async () => {
+    const guild = guildWith("111")
+    await pointEventModel.collection.insertOne({userId: "111", seq: 1, delta: -10, balance: 90, reason: "flip", command: "flip", createdAt: new Date()})
+
+    const before = await getNamedPointEvents(asGuild(guild))
+    eq("the nickname they started with", before[0].nickname, "nick111")
+
+    const member = guild.members.cache.get("111")
+    if (member) member.nickname = "shkreli"
+    const after = await getNamedPointEvents(asGuild(guild))
+
+    eq("the new nickname, while the events stay loaded", after[0].nickname, "shkreli")
+}},
+
+{name: "named events: an event recorded by a command joins the loaded history without a reload", fn: async () => {
+    await seed("111", {points: 1000})
+    const guild = asGuild(guildWith("111"))
+    eq("nothing to start", (await getNamedPointEvents(guild)).length, 0)
+
+    const ctx = fakeContext("111")
+    rollSequence(0)
+    await flip.callback({message: ctx.message, args: ["25"], guild: guildWith("111")})
+
+    const events = await getNamedPointEvents(guild)
+    eq("the flip is there without going back to the database", events.length, 1)
+    eq("under the member's name", `${displayName(events[0])} ${events[0].delta}`, "nick111 -25")
+}},
+
+{name: "point history payload: rows point at lookup tables instead of repeating every name", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "111", seq: 1, delta: -10, balance: 90, reason: "flip", command: "flip", createdAt: new Date("2024-01-01T00:00:00Z")},
+        {userId: "111", seq: 2, delta: 20, balance: 110, reason: "flip", command: "flip", createdAt: new Date("2024-01-02T00:00:00Z")},
+        {userId: "999", seq: -1, delta: 5, balance: null, reason: "accrual", backfilled: true, createdAt: new Date("2024-01-03T00:00:00Z")},
+    ])
+
+    const guild = asGuild(guildWith("111"))
+    const payload = buildPointHistoryPayload(await allPointEvents(), await memberNames(guild))
+
+    eq("one entry per person", payload.people.length, 2)
+    eq("named by the nickname Discord gives them", displayName(payload.people[0]), "nick111")
+    eq("each reason listed once", payload.reasons.join(","), "flip,accrual")
+    eq("each command listed once", payload.commands.join(","), "flip")
+    eq("each person holds their own rows", payload.people.map(person => person.rows.length).join(","), "2,1")
+    eq("a row is time, delta, balance, reason, command, recovered",
+        payload.people[0].rows[0].join(","), `${Date.parse("2024-01-01T00:00:00Z")},-10,90,0,0,0`)
+    eq("rows stay oldest first within a person",
+        payload.people[0].rows.map(row => row[1]).join(","), "-10,20")
+    eq("an event with no command says so with -1", payload.people[1].rows[0][4], -1)
+    eq("a backfilled event is flagged as recovered", payload.people[1].rows[0][5], 1)
+    eq("a live event is not", payload.people[0].rows[0][5], 0)
+    eq("and keeps an unknown balance", payload.people[1].rows[0][2], null)
+    eq("a departed member carries neither name, which is what marks them departed",
+        `${payload.people[1].username}/${payload.people[1].nickname}`, "null/null")
+}},
+
+{name: "point history payload: the served body is rebuilt once a new event lands", fn: async () => {
+    await seed("111", {points: 1000})
+    const guild = asGuild(guildWith("111"))
+
+    const at = Date.now()
+    const before = await pointHistoryBody(guild, at)
+    eq("served as json", JSON.parse(before).people.length, 0)
+    check("the same body is handed out again", await pointHistoryBody(guild, at) === before)
+
+    rollSequence(0)
+    await flip.callback({message: fakeContext("111").message, args: ["25"], guild: guildWith("111")})
+
+    check("a rebuild waits out the throttle", await pointHistoryBody(guild, at + 5000) === before)
+
+    const after = JSON.parse(await pointHistoryBody(guild, at + 11000))
+    eq("the new flip is in the rebuilt body", after.people[0].rows.length, 1)
+    eq("under the member's name", after.people[0].nickname, "nick111")
+}},
+
+{name: "membership: only Discord saying the member is unknown means they are not in the server", fn: async () => {
+    const throwing = (err: unknown) => asGuild({...guildWith("111"),
+        members: {...guildWith("111").members, fetch: async () => { throw err }}} as ReturnType<typeof guildWith>)
+
+    eq("a member Discord knows about is in", `${await isGuildMember(asGuild(guildWith("111")), "111")}`, "true")
+    eq("code 10007 is the one answer that means they are out",
+        `${await isGuildMember(throwing({code: 10007}), "111")}`, "false")
+    eq("a rate limit is not an answer about membership",
+        `${await isGuildMember(throwing({code: 429}), "111")}`, "undefined")
+    eq("neither is a connection that fell over",
+        `${await isGuildMember(throwing(new Error("socket hang up")), "111")}`, "undefined")
+    eq("without a guild there is nothing to check yet",
+        `${await isGuildMember(undefined, "111")}`, "undefined")
+}},
+
+{name: "point history payload: a rename is rebuilt even though the number of events has not moved", fn: async () => {
+    await seed("111", {points: 1000})
+    const raw = guildWith("111")
+    const guild = asGuild(raw)
+    const member = raw.members.cache.get("111")
+
+    const at = Date.now()
+    const before = JSON.parse(await pointHistoryBody(guild, at))
+    eq("named as they were", `${before.people.length}`, "0")
+
+    await pointEventModel.collection.insertOne({userId: "111", seq: 1, delta: -10, balance: 990,
+        reason: "flip", command: "flip", createdAt: new Date()})
+    clearPointEvents()
+
+    const named = JSON.parse(await pointHistoryBody(guild, at + 11000))
+    eq("the nickname is served", named.people[0].nickname, "nick111")
+    eq("so is the username behind it", named.people[0].username, "name111")
+
+    if (member !== undefined) member.user.username = "renamed111"
+    const renamed = JSON.parse(await pointHistoryBody(guild, at + 22000))
+    eq("the new username is served, not the cached one", renamed.people[0].username, "renamed111")
+}},
+
+{name: "flip: a restart part way through winds the run up instead of leaving it frozen", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+
+    const running = flip.callback({message: ctx.message, args: ["100", "10"], guild: guildWith("111")})
+    setShuttingDown(true)
+    try {
+        await running
+    } finally {
+        setShuttingDown(false)
+    }
+
+    const user = await settleUser("111")
+    check("the run stopped short of its ten flips", user.flipsWon + user.flipsLost < 10,
+        `${user.flipsWon} won, ${user.flipsLost} lost`)
+    check("the panel says why it stopped",
+        ctx.edits.some(edit => (edit.content ?? "").includes("Stopped, the bot is restarting")),
+        ctx.edits.map(edit => edit.content).join(" | "))
+}},
+
+{name: "martingale: a restart part way through winds the ladder up instead of leaving it frozen", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+
+    const running = martingale.callback({message: ctx.message, args: ["100", "5"], guild: guildWith("111")})
+    setShuttingDown(true)
+    try {
+        await running
+    } finally {
+        setShuttingDown(false)
+    }
+
+    check("the ladder stopped short of its five wins", (await settleUser("111")).flipsWon < 5,
+        `${(await settleUser("111")).flipsWon} won`)
+    check("the ladder says why it stopped",
+        ctx.edits.some(edit => (edit.content ?? "").includes("Stopped, the bot is restarting")),
+        ctx.edits.map(edit => edit.content).join(" | "))
+}},
+
+{name: "flip: the points land before the command lets go of the user, the countdown plays out after", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+
+    await flip.callback({message: ctx.message, args: ["100"], guild: guildWith("111")})
+
+    eq("the win landed", (await settleUser("111")).points, 1100)
+    eq("the command did not hold the user while the countdown played", ctx.replies.length, 0)
+}},
+
+{name: "commands sent during a restart are turned away untouched", fn: async () => {
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+
+    setShuttingDown(true)
+    try {
+        await flip.callback({message: ctx.message, args: ["100"], guild: guildWith("111")})
+    } finally {
+        setShuttingDown(false)
+    }
+
+    eq("no points moved", (await settleUser("111")).points, 1000)
+    check("they were told to come back in a minute",
+        ctx.replies.some(reply => reply.includes("Restarting")), ctx.replies.join(" | "))
+}},
+
+{name: "challenge: two sent at once only escrow once", fn: async () => {
+    await challengeModel.collection.deleteMany({})
+    await seed("111", {points: 500})
+
+    const first = fakeContext("111")
+    const second = fakeContext("111")
+    await Promise.all([
+        challenge.callback({message: first.message, args: ["100"], guild: guildWith("111")}),
+        challenge.callback({message: second.message, args: ["100"], guild: guildWith("111")}),
+    ])
+
+    eq("only one challenge is open", await challengeModel.collection.countDocuments({ownerId: "111"}), 1)
+    eq("and only one bet left their balance", (await settleUser("111")).points, 400)
+    check("the second one was turned away",
+        first.replies.concat(second.replies).some(reply => reply.includes("Only one challenge at a time")),
+        first.replies.concat(second.replies).join(" | "))
+}},
+
 {name: "no command wrote a message Discord would reject", fn: async () => {
     const longest = Math.max(0, ...written.map(content => (content ?? "").length))
     const oversized = written.filter(content => (content ?? "").length > DISCORD_MESSAGE_LIMIT)
@@ -1029,6 +1283,8 @@ const main = async () => {
         try {
             await userModel.collection.deleteMany({})
             await pointEventModel.collection.deleteMany({})
+            clearPointEvents()
+            clearPointHistoryBody()
             await t.fn()
         } catch (e) {
             failures++

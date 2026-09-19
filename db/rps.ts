@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import retryWrite from "./retryWrite";
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -64,6 +65,5 @@ export const insertRps = async (rps: IRps) => {
     await new rpsModel({...(rps)}).save().catch(err => {console.log(err)})
 }
 
-export const deleteRps = async (ownerId: string) => {
-    return await rpsModel.deleteOne({ownerId}).catch(err => {console.log(err)})
-}
+export const deleteRps = async (ownerId: string): Promise<boolean> =>
+    await retryWrite(() => rpsModel.deleteOne({ownerId}), `deleting the rps for ${ownerId}`)

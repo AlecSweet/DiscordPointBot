@@ -11,6 +11,8 @@ import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
+import { isShuttingDown } from "../util/shuttingDown";
+import { whileSettling } from "../util/settling";
 import recordFile from "../util/recordFile";
 import sendPanel from "../util/sendPanel";
 dotenv.config()
@@ -20,6 +22,7 @@ const MIN_BET_PCT = 0.01
 const LINES = 5
 const ROUND_MS = 2000
 const LADDER_FILE = 'martingale.txt'
+const RESTARTING = 'Stopped, the bot is restarting'
 
 const martingale = textCommand({
     name: 'martingale',
@@ -43,7 +46,7 @@ const martingale = textCommand({
             return
         }
 
-        await runMartingale(ctx.guild, user, baseBet, wins, ctx.message, ctx.origin)
+        await whileSettling(() => runMartingale(ctx.guild, user, baseBet, wins, ctx.message, ctx.origin))
     })
 })
 
@@ -116,6 +119,12 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
     for (;;) {
         await sleep(Math.max(0, deadline - Date.now()))
+
+        if (isShuttingDown()) {
+            await finishMartingale(martingaleMessage, rounds,
+                getMessageContent(user, bet, rounds, wins, maxWins, user.points - startingPoints, RESTARTING))
+            return
+        }
 
         const wager = bet
         const won = !(getRandomValues(new Uint8Array(1))[0] < 128)

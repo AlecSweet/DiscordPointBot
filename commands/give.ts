@@ -2,6 +2,7 @@ import { parseTarget, parsePoints } from "../util/args";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
 import { inc, updateUser } from "../util/userUtil";
+import { whileSettling } from "../util/settling";
 
 const give = textCommand({
     name: 'give',
@@ -24,8 +25,11 @@ const give = textCommand({
             return
         }
 
-        const author = await updateUser(user.id, {points: inc(-points), pointsGiven: inc(points)}, {...ctx.origin, reason: "giftSent"})
-        await updateUser(gifteeId, {points: inc(points), pointsRecieved: inc(points)}, {...ctx.origin, reason: "giftReceived"})
+        const author = await whileSettling(async () => {
+            const sender = await updateUser(user.id, {points: inc(-points), pointsGiven: inc(points)}, {...ctx.origin, reason: "giftSent"})
+            await updateUser(gifteeId, {points: inc(points), pointsRecieved: inc(points)}, {...ctx.origin, reason: "giftReceived"})
+            return sender
+        })
         await ctx.message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
     })
 })
