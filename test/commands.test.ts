@@ -7,7 +7,7 @@ import challengeModel from "../db/challenge"
 import { setShuttingDown } from "../util/shuttingDown"
 import { settleUser } from "../util/userUtil"
 import { addUserMutex, userMutexes } from "../util/userMutexes"
-import getNamedPointEvents, { memberNames } from "../util/namedPointEvents"
+import getNamedPointEvents, { displayName, memberNames } from "../util/namedPointEvents"
 import pointHistoryBody, { buildPointHistoryPayload, clearPointHistoryBody } from "../web/pointHistoryPayload"
 import isGuildMember from "../util/guildMembership"
 
@@ -1046,10 +1046,11 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     eq("both events came back, oldest first", events.map(event => event.delta).join(","), "-10,20")
     check("no user id is left on them", events.every(event => !("userId" in event)), JSON.stringify(events[0]))
-    eq("the member is named three ways",
-        `${events[0].name}/${events[0].username}/${events[0].nickname}`, "user111/name111/nick111")
-    eq("someone who has left the server keeps their id and has no names",
-        `${events[1].name}/${events[1].username}/${events[1].nickname}`, "999/null/null")
+    eq("the member carries the two names Discord actually has",
+        `${events[0].username}/${events[0].nickname}`, "name111/nick111")
+    eq("and the nickname is the one shown", displayName(events[0]), "nick111")
+    eq("someone who has left the server has neither name",
+        `${events[1].username}/${events[1].nickname}`, "null/null")
 }},
 
 {name: "named events: members the gateway left out of the cache are still named", fn: async () => {
@@ -1061,8 +1062,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const guild = guildWithOfflineMembers(["111"], ["222"]) as unknown as Guild
     const events = await getNamedPointEvents(guild)
 
-    eq("the member who was cached is named", events[0].name, "user111")
-    eq("and so is the one only a fetch knows about", events[1].name, "user222")
+    eq("the member who was cached is named", displayName(events[0]), "nick111")
+    eq("and so is the one only a fetch knows about", displayName(events[1]), "nick222")
 }},
 
 {name: "named events: a member renaming themselves shows up right away", fn: async () => {
@@ -1090,7 +1091,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const events = await getNamedPointEvents(guild)
     eq("the flip is there without going back to the database", events.length, 1)
-    eq("under the member's name", `${events[0].name} ${events[0].delta}`, "user111 -25")
+    eq("under the member's name", `${displayName(events[0])} ${events[0].delta}`, "nick111 -25")
 }},
 
 {name: "point history payload: rows point at lookup tables instead of repeating every name", fn: async () => {
@@ -1103,7 +1104,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const guild = asGuild(guildWith("111"))
     const payload = buildPointHistoryPayload(await allPointEvents(), await memberNames(guild))
 
-    eq("one entry per person, named", payload.people.map(person => person.name).join(","), "user111,999")
+    eq("one entry per person", payload.people.length, 2)
+    eq("named by the nickname Discord gives them", displayName(payload.people[0]), "nick111")
     eq("each reason listed once", payload.reasons.join(","), "flip,accrual")
     eq("each command listed once", payload.commands.join(","), "flip")
     eq("each person holds their own rows", payload.people.map(person => person.rows.length).join(","), "2,1")
@@ -1115,7 +1117,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("a backfilled event is flagged as recovered", payload.people[1].rows[0][5], 1)
     eq("a live event is not", payload.people[0].rows[0][5], 0)
     eq("and keeps an unknown balance", payload.people[1].rows[0][2], null)
-    eq("a departed member is still named by their id", payload.people[1].name, "999")
+    eq("a departed member carries neither name, which is what marks them departed",
+        `${payload.people[1].username}/${payload.people[1].nickname}`, "null/null")
 }},
 
 {name: "point history payload: the served body is rebuilt once a new event lands", fn: async () => {
@@ -1134,7 +1137,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const after = JSON.parse(await pointHistoryBody(guild, at + 11000))
     eq("the new flip is in the rebuilt body", after.people[0].rows.length, 1)
-    eq("under the member's name", after.people[0].name, "user111")
+    eq("under the member's name", after.people[0].nickname, "nick111")
 }},
 
 {name: "membership: only Discord saying the member is unknown means they are not in the server", fn: async () => {
@@ -1167,7 +1170,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     clearPointEvents()
 
     const named = JSON.parse(await pointHistoryBody(guild, at + 11000))
-    eq("the display name is served", named.people[0].name, "user111")
+    eq("the nickname is served", named.people[0].nickname, "nick111")
     eq("so is the username behind it", named.people[0].username, "name111")
 
     if (member !== undefined) member.user.username = "renamed111"

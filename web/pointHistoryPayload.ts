@@ -51,14 +51,14 @@ export const buildPointHistoryPayload = (events: IPointEvent[], names: Map<strin
         reasons: reasons.values,
         commands: commands.values,
         people: Array.from(rowsByUser).map(([userId, rows]) => ({
-            ...(names.get(userId) ?? departedMember(userId)),
+            ...(names.get(userId) ?? departedMember()),
             rows: rows,
         })),
     }
 }
 
 const signature = (events: IPointEvent[], names: Map<string, IMemberName>): string =>
-    `${events.length}:${Array.from(names.values()).map(name => `${name.name}/${name.username}/${name.nickname}`).join("|")}`
+    `${events.length}:${Array.from(names.values()).map(name => `${name.username}/${name.nickname}`).join("|")}`
 
 const REBUILD_MS = 10 * 1000
 
