@@ -1,4 +1,5 @@
 import { parseTarget } from "../util/args";
+import formatPoints from "../util/formatPoints";
 import textCommand from "../util/textCommand";
 import { settleUser } from "../util/userUtil";
 
@@ -18,8 +19,8 @@ const points = textCommand({
 
     const user = await settleUser(id)
     await ctx.message.reply({content: ctx.args[0] ?
-        `${ctx.args[0]} has ${user.points} points` :
-        `You have ${user.points} points`})
+        `${ctx.args[0]} has ${formatPoints(user.points)} points` :
+        `You have ${formatPoints(user.points)} points`})
 })
 
 export default points

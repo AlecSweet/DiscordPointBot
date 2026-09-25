@@ -7,6 +7,7 @@ import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/fli
 import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import formatNet from "../util/formatNet";
+import formatPoints from "../util/formatPoints";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
@@ -14,7 +15,7 @@ import withUserLock from "../util/userLock";
 import { isShuttingDown } from "../util/shuttingDown";
 import { whileSettling } from "../util/settling";
 import recordFile from "../util/recordFile";
-import sendPanel from "../util/sendPanel";
+import sendPanel, { IPanel } from "../util/sendPanel";
 dotenv.config()
 
 const MAX_WINS = 50
@@ -57,17 +58,17 @@ interface INumberedRound {
     flips: string[]
 }
 
-const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = ''): any => {
+const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = '', record = formatRounds(rounds)): any => {
+    const header = `Points: ${formatPoints(user.points)} (${formatNet(net)})   Win: ${wins}/${maxWins}   Next Bet: ${formatPoints(bet)}`
+
     const build = (body: string) =>
 `**<@${user.id}>'s Martinelli**
 \`\`\`ansi
-Points: ${user.points} (${formatNet(net)})   Win: ${wins}/${maxWins}   Next Bet: ${bet}
-
-${body}
+${body === '' ? header : `${header}\n\n${body}`}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, formatRounds(rounds))}
+    return {content: fitToMessageLimit(build, record)}
 }
 
 const numberRounds = (rounds: string[][]): INumberedRound[] =>
@@ -89,20 +90,26 @@ const hasScrolledOff = (rounds: string[][]): boolean => numberRounds(rounds).len
 
 const getNetLine = (net: number): string => {
     if (net > 0) {
-        return `Up ${net} points ${process.env.PEEPO_COMFY_EMOJI}`
+        return `Up ${formatPoints(net)} points ${process.env.PEEPO_COMFY_EMOJI}`
     }
     if (net < 0) {
-        return `Down ${Math.abs(net)} points ${process.env.SMODGE_EMOJI}`
+        return `Down ${formatPoints(Math.abs(net))} points ${process.env.SMODGE_EMOJI}`
     }
     return `${process.env.SHRUGGERS_EMOJI}`
 }
 
-const finishMartingale = async (martingaleMessage: Message<boolean>, rounds: string[][], panel: {content: string}) => {
-    const scrolledOff = hasScrolledOff(rounds)
+const finishMartingale = async (martingaleMessage: Message<boolean>, rounds: string[][], build: (record?: string) => {content: string}) => {
+    const send = (panel: IPanel) => sendPanel(options => martingaleMessage.edit(options), panel)
 
-    await sendPanel(options => martingaleMessage.edit(options), {
-        ...panel,
-        ...recordFile(scrolledOff ? renderRounds(numberRounds(rounds)) : undefined, LADDER_FILE)
+    if (!hasScrolledOff(rounds)) {
+        await send(build())
+        return
+    }
+
+    await send({
+        ...build(''),
+        fallbackContent: build().content,
+        ...recordFile(renderRounds(numberRounds(rounds)), LADDER_FILE)
     })
 }
 
@@ -122,7 +129,7 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
         if (isShuttingDown()) {
             await finishMartingale(martingaleMessage, rounds,
-                getMessageContent(user, bet, rounds, wins, maxWins, user.points - startingPoints, RESTARTING))
+                record => getMessageContent(user, bet, rounds, wins, maxWins, user.points - startingPoints, RESTARTING, record))
             return
         }
 
@@ -130,13 +137,13 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
         const won = !(getRandomValues(new Uint8Array(1))[0] < 128)
         if (won) {
             user = await updateUserWin(user, wager, change)
-            rounds[rounds.length-1].push(`✅ ${wager}`)
+            rounds[rounds.length-1].push(`✅ ${formatPoints(wager)}`)
             rounds.push([])
             wins++
             bet = baseBet
         } else {
             user = await updateUserLoss(user, wager, change)
-            rounds[rounds.length-1].push(`❌ ${wager}`)
+            rounds[rounds.length-1].push(`❌ ${formatPoints(wager)}`)
             bet = wager * 2
         }
 
@@ -144,13 +151,13 @@ const runMartingale = async (guild: Guild, user: IUser, baseBet: number, maxWins
 
         if (wins >= maxWins) {
             await finishMartingale(martingaleMessage, rounds,
-                getMessageContent(user, bet, rounds, wins, maxWins, net, getNetLine(net)))
+                record => getMessageContent(user, bet, rounds, wins, maxWins, net, getNetLine(net), record))
             return
         }
 
         if (bet > user.points) {
             await finishMartingale(martingaleMessage, rounds,
-                getMessageContent(user, bet, rounds, wins, maxWins, net, `You ain't got ${bet}. Sit`))
+                record => getMessageContent(user, bet, rounds, wins, maxWins, net, `You ain't got ${formatPoints(bet)}. Sit`, record))
             await checkAndAssignDusted(guild, user, wager)
             return
         }

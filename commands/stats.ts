@@ -1,6 +1,7 @@
 import { IUser } from "../db/user";
 import { parseTarget } from "../util/args";
 import ephemeralButton from "../util/ephemeralButton";
+import formatPoints from "../util/formatPoints";
 import textCommand from "../util/textCommand";
 import { settleUser } from "../util/userUtil";
 
@@ -34,51 +35,51 @@ const formatStats = (user: IUser): string => {
     const secLeftAfterHours = secLeftAfterDays % 3600
     const minutes = Math.floor(secLeftAfterHours / 60)
 
-    const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
-    const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
-    const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
+    const pPF = (user.flipsWon + user.flipsLost) > 0 ? formatPoints((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost), 1) : 0
+    const pPL = user.flipsLost > 0 ? formatPoints(user.pointsLost / user.flipsLost, 1) : 0
+    const pPW = user.flipsWon > 0 ? formatPoints(user.pointsWon / user.flipsWon, 1) : 0
 
-    const cpPF = (user.challengesWon + user.challengesLost) > 0 ? (Math.round(((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost)) * 10) / 10).toFixed(1) : 0
-    const cpPL = user.challengesLost > 0 ? (Math.round((user.challengePointsLost / user.challengesLost) * 10) / 10).toFixed(1) : 0
-    const cpPW = user.challengesWon > 0 ? (Math.round((user.challengePointsWon / user.challengesWon) * 10) / 10).toFixed(1) : 0
+    const cpPF = (user.challengesWon + user.challengesLost) > 0 ? formatPoints((user.challengePointsLost + user.challengePointsWon) / (user.challengesWon + user.challengesLost), 1) : 0
+    const cpPL = user.challengesLost > 0 ? formatPoints(user.challengePointsLost / user.challengesLost, 1) : 0
+    const cpPW = user.challengesWon > 0 ? formatPoints(user.challengePointsWon / user.challengesWon, 1) : 0
 
-    const wpPF = (user.warsWon + user.warsLost) > 0 ? (Math.round(((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost)) * 10) / 10).toFixed(1) : 0
-    const wpPL = user.warsLost > 0 ? (Math.round((user.warPointsLost / user.warsLost) * 10) / 10).toFixed(1) : 0
-    const wpPW = user.warsWon > 0 ? (Math.round((user.warPointsWon / user.warsWon) * 10) / 10).toFixed(1) : 0
+    const wpPF = (user.warsWon + user.warsLost) > 0 ? formatPoints((user.warPointsLost + user.warPointsWon) / (user.warsWon + user.warsLost), 1) : 0
+    const wpPL = user.warsLost > 0 ? formatPoints(user.warPointsLost / user.warsLost, 1) : 0
+    const wpPW = user.warsWon > 0 ? formatPoints(user.warPointsWon / user.warsWon, 1) : 0
 
-    const rpPF = (user.rpsWon + user.rpsLost) > 0 ? (Math.round(((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost)) * 10) / 10).toFixed(1) : 0
-    const rpPL = user.rpsLost > 0 ? (Math.round((user.rpsPointsLost / user.rpsLost) * 10) / 10).toFixed(1) : 0
-    const rpPW = user.rpsWon > 0 ? (Math.round((user.rpsPointsWon / user.rpsWon) * 10) / 10).toFixed(1) : 0
+    const rpPF = (user.rpsWon + user.rpsLost) > 0 ? formatPoints((user.rpsPointsLost + user.rpsPointsWon) / (user.rpsWon + user.rpsLost), 1) : 0
+    const rpPL = user.rpsLost > 0 ? formatPoints(user.rpsPointsLost / user.rpsLost, 1) : 0
+    const rpPW = user.rpsWon > 0 ? formatPoints(user.rpsPointsWon / user.rpsWon, 1) : 0
 
     return (
 `**<@${user.id}>'s Stats**
 \`\`\`Ruby
-Points          ${user.points.toLocaleString('en-US')}
-Peak Points     ${user.maxPoints.toLocaleString('en-US')}
+Points          ${formatPoints(user.points)}
+Peak Points     ${formatPoints(user.maxPoints)}
 Active          ${days} days / ${hours} hours / ${minutes} minutes
-Debt            ${Math.max((user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + 100)) * -1, 0).toLocaleString('en-US')}
+Debt            ${formatPoints(Math.max((user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + 100)) * -1, 0))}
 
-Points Earned   ${Math.floor(user.secondsActive/60).toLocaleString('en-US')}
-Point Gifts     ${user.pointsGiven.toLocaleString('en-US')} Given / ${user.pointsRecieved.toLocaleString('en-US')} Received
-Points Claimed  ${user.pointsClaimed.toLocaleString('en-US')} Claimed
+Points Earned   ${formatPoints(Math.floor(user.secondsActive/60))}
+Point Gifts     ${formatPoints(user.pointsGiven)} Given / ${formatPoints(user.pointsRecieved)} Received
+Points Claimed  ${formatPoints(user.pointsClaimed)} Claimed
 
-Flips           ${(user.flipsWon+user.flipsLost).toLocaleString('en-US')} Total / ${user.flipsWon.toLocaleString('en-US')} Won / ${user.flipsLost.toLocaleString('en-US')} Lost
-Returns         ${(user.pointsWon+user.pointsLost).toLocaleString('en-US')} Total / ${user.pointsWon.toLocaleString('en-US')} Won / ${user.pointsLost.toLocaleString('en-US')} Lost
-Avg Bets        ${pPF.toLocaleString('en-US')} Avg Bet / ${pPW.toLocaleString('en-US')} Avg Win / ${pPL.toLocaleString('en-US')} Avg Loss
-Max Streak      ${user.maxWinStreak.toLocaleString('en-US')} Won / ${user.maxLossStreak.toLocaleString('en-US')} Lost
-Current Streak  ${user.flipStreak < 0 ? `${Math.abs(user.flipStreak).toLocaleString('en-US')} Lost` : `${user.flipStreak.toLocaleString('en-US')} Won`}
+Flips           ${formatPoints(user.flipsWon+user.flipsLost)} Total / ${formatPoints(user.flipsWon)} Won / ${formatPoints(user.flipsLost)} Lost
+Returns         ${formatPoints(user.pointsWon+user.pointsLost)} Total / ${formatPoints(user.pointsWon)} Won / ${formatPoints(user.pointsLost)} Lost
+Avg Bets        ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
+Max Streak      ${formatPoints(user.maxWinStreak)} Won / ${formatPoints(user.maxLossStreak)} Lost
+Current Streak  ${user.flipStreak < 0 ? `${formatPoints(Math.abs(user.flipStreak))} Lost` : `${formatPoints(user.flipStreak)} Won`}
 
-Challenges      ${(user.challengesWon+user.challengesLost).toLocaleString('en-US')} Total / ${user.challengesWon.toLocaleString('en-US')} Won / ${user.challengesLost.toLocaleString('en-US')} Lost
-Returns         ${(user.challengePointsWon+user.challengePointsLost).toLocaleString('en-US')} Total / ${user.challengePointsWon.toLocaleString('en-US')} Won / ${user.challengePointsLost.toLocaleString('en-US')} Lost
-Avg Bets        ${cpPF.toLocaleString('en-US')} Avg Bet / ${cpPW.toLocaleString('en-US')} Avg Win / ${cpPL.toLocaleString('en-US')} Avg Loss
+Challenges      ${formatPoints(user.challengesWon+user.challengesLost)} Total / ${formatPoints(user.challengesWon)} Won / ${formatPoints(user.challengesLost)} Lost
+Returns         ${formatPoints(user.challengePointsWon+user.challengePointsLost)} Total / ${formatPoints(user.challengePointsWon)} Won / ${formatPoints(user.challengePointsLost)} Lost
+Avg Bets        ${cpPF} Avg Bet / ${cpPW} Avg Win / ${cpPL} Avg Loss
 
-War             ${(user.warsWon+user.warsLost).toLocaleString('en-US')} Total / ${user.warsWon.toLocaleString('en-US')} Won / ${user.warsLost.toLocaleString('en-US')} Lost
-Returns         ${(user.warPointsWon+user.warPointsLost).toLocaleString('en-US')} Total / ${user.warPointsWon.toLocaleString('en-US')} Won / ${user.warPointsLost.toLocaleString('en-US')} Lost
-Avg Bets        ${wpPF.toLocaleString('en-US')} Avg Bet / ${wpPW.toLocaleString('en-US')} Avg Win / ${wpPL.toLocaleString('en-US')} Avg Loss
+War             ${formatPoints(user.warsWon+user.warsLost)} Total / ${formatPoints(user.warsWon)} Won / ${formatPoints(user.warsLost)} Lost
+Returns         ${formatPoints(user.warPointsWon+user.warPointsLost)} Total / ${formatPoints(user.warPointsWon)} Won / ${formatPoints(user.warPointsLost)} Lost
+Avg Bets        ${wpPF} Avg Bet / ${wpPW} Avg Win / ${wpPL} Avg Loss
 
-R P S           ${(user.rpsWon+user.rpsLost).toLocaleString('en-US')} Total / ${user.rpsWon.toLocaleString('en-US')} Won / ${user.rpsLost.toLocaleString('en-US')} Lost
-Returns         ${(user.rpsPointsWon+user.rpsPointsLost).toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Won / ${user.rpsPointsLost.toLocaleString('en-US')} Lost
-Avg Bets        ${rpPF.toLocaleString('en-US')} Avg Bet / ${rpPW.toLocaleString('en-US')} Avg Win / ${rpPL.toLocaleString('en-US')} Avg Loss
+R P S           ${formatPoints(user.rpsWon+user.rpsLost)} Total / ${formatPoints(user.rpsWon)} Won / ${formatPoints(user.rpsLost)} Lost
+Returns         ${formatPoints(user.rpsPointsWon+user.rpsPointsLost)} Total / ${formatPoints(user.rpsPointsWon)} Won / ${formatPoints(user.rpsPointsLost)} Lost
+Avg Bets        ${rpPF} Avg Bet / ${rpPW} Avg Win / ${rpPL} Avg Loss
 \`\`\``
     )
 }

@@ -1,6 +1,7 @@
 import { Mutex, withTimeout } from "async-mutex";
 import { getRps, insertRps, updateRps } from "../db/rps";
 import { parseTarget, parsePoints } from "../util/args";
+import formatPoints from "../util/formatPoints";
 import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "../util/userUtil";
 import { Guild, Message } from "discord.js";
@@ -61,7 +62,7 @@ const rps = textCommand({
         }
 
         const rpsMessage = await message.channel.send({
-            content: `<@${message.author.id}> wants to play rock paper scissors against ${targetId ? `<@${targetId}> for up to ${rpsPoints} points` : `anyone for ${rpsPoints} points`}. Game will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
+            content: `<@${message.author.id}> wants to play rock paper scissors against ${targetId ? `<@${targetId}> for up to ${formatPoints(rpsPoints)} points` : `anyone for ${formatPoints(rpsPoints)} points`}. Game will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
             components: [{
                 type: 1,
                 components: [
@@ -130,7 +131,7 @@ const rps = textCommand({
                             }
 
                             if(targetId === '' && targetUser.points < rpsPoints){
-                                await i.reply({content: `You only got ${targetUser.points} ${process.env.NOPPERS_EMOJI}`})
+                                await i.reply({content: `You only got ${formatPoints(targetUser.points)} ${process.env.NOPPERS_EMOJI}`})
                                 return undefined
                             }
 
@@ -155,7 +156,7 @@ const rps = textCommand({
                         }
                         const { targetUser, acceptBet } = accepted
 
-                        gameStarting = `<@${message.author.id}> against <@${targetUser.id}> for ${acceptBet} points ${process.env.PEPO_SMASH_EMOJI}\n⠀\n`
+                        gameStarting = `<@${message.author.id}> against <@${targetUser.id}> for ${formatPoints(acceptBet)} points ${process.env.PEPO_SMASH_EMOJI}\n⠀\n`
                         switch(i.customId) {
                             case 'r': acceptPick = RpsPick.rock; break;
                             case 'p': acceptPick = RpsPick.paper; break;
@@ -234,7 +235,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         }
     } else if (rpsOutcome === RpsOutcome.ownerWon) {
         await acceptMessage.edit({
-            content: `${gameStarting}${outcomeString}<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
+            content: `${gameStarting}${outcomeString}<@${ownerId}> wins ${formatPoints(acceptBet)} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
         const user = await payRps(ownerId, ownerId, targetId, acceptBet, origin)
         if (acceptBet >= 100 && user.points < 5) {
@@ -242,7 +243,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         }
     } else {
         await acceptMessage.edit({
-            content: `${gameStarting}${outcomeString}<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
+            content: `${gameStarting}${outcomeString}<@${targetId}> wins ${formatPoints(acceptBet)} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
         const user = await payRps(ownerId, targetId, ownerId, acceptBet, origin)
         if (acceptBet >= 100 && user.points < 5) {

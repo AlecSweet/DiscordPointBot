@@ -53,10 +53,10 @@ const main = async () => {
         `${(continued(cookieOf(session as ISession), AT + HOUR)?.expiresAt ?? 0) - (session?.expiresAt ?? 0)}`, `${HOUR}`)
 
     check("a session nobody used for longer than the idle window is refused",
-        `${continued(cookieOf(session as ISession), AT + 3 * DAY)}`, "undefined")
+        `${continued(cookieOf(session as ISession), AT + 8 * DAY)}`, "undefined")
 
-    check("renewals keep a session alive until a week after the link was minted",
-        `${Math.round(lifetime(session as ISession, HOUR) / DAY)}`, "7")
+    check("renewals keep a session alive until two weeks after the link was minted",
+        `${Math.round(lifetime(session as ISession, HOUR) / DAY)}`, "14")
 
     const unopened = tokenOf(mintLink("50", AT))
     check("a link handed straight to the data route as a cookie is refused, and stays unopened",
@@ -67,7 +67,7 @@ const main = async () => {
 
     check("the cookie is kept from scripts and from other sites",
         cookieFor(session as ISession, true, AT).split("; ").slice(1).join(" "),
-        "Max-Age=172800 Path=/ HttpOnly SameSite=Strict Secure")
+        "Max-Age=604800 Path=/ HttpOnly SameSite=Strict Secure")
 
     check("a site published over https marks the cookie Secure whatever the request looked like",
         `${cookieFor(session as ISession, false, AT).includes("; Secure")}`, "true")

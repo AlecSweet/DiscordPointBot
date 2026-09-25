@@ -152,7 +152,7 @@ interface IFakeInteraction {
 
 type IFakeCollectorHandler = (interaction?: IFakeInteraction) => Promise<void>
 
-const fakeContext = (authorId: string) => {
+const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
     const replies: string[] = []
     const privateReplies: IFakeInteractionPayload[] = []
     const edits: IFakePayload[] = []
@@ -167,7 +167,10 @@ const fakeContext = (authorId: string) => {
         if (payload.files !== undefined) files = payload.files
     }
     const sent = {
-        edit: async (payload: IFakePayload) => { edits.push(payload); apply(payload); return sent },
+        edit: async (payload: IFakePayload) => {
+            if (rejectAttachments && payload.files !== undefined) throw new Error("Missing Permissions")
+            edits.push(payload); apply(payload); return sent
+        },
         delete: async () => { deleted = true; return sent },
         react: async () => {},
         channel: {} as unknown,
@@ -386,9 +389,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
     const panel = written[written.length - 1]
 
-    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1100"), panel)
-    check("the second flip is on the next line", panel.includes("2) ❌ 1000"), panel)
-    check("the fourth flip keeps counting", panel.includes("4) ❌ 1000"), panel)
+    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1,100"), panel)
+    check("the second flip is on the next line", panel.includes("2) ❌ 1,000"), panel)
+    check("the fourth flip keeps counting", panel.includes("4) ❌ 1,000"), panel)
     eq("no file while the panel shows everything", ctx.files().length, 0)
 }},
 
@@ -403,7 +406,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the last flip has doubled five times", panel.includes("5) ✅ 320"), panel)
 }},
 
-{name: "flip: five lines show while it is going and once it is done", fn: async () => {
+{name: "flip: five lines show while it is going, none once the record is attached", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -416,10 +419,11 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("five lines on the last running panel", numberedLines(running), 5)
     check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
     check("the sixth flip has already scrolled off", !running.includes(" 6) "), running)
-    eq("still five lines once it is done", numberedLines(finished), 5)
+    eq("no lines once the record is attached", numberedLines(finished), 0)
+    check("the finished panel keeps its header", finished.includes("Flip: 12/12"), finished)
 }},
 
-{name: "martingale: five lines show while it is going and once it is done", fn: async () => {
+{name: "martingale: five ladders show while it is going, none once the record is attached", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -432,7 +436,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("five ladders on the last running panel", numberedLines(running), 5)
     check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
     check("the sixth ladder has already scrolled off", !running.includes(" 6) "), running)
-    eq("still five ladders once it is done", numberedLines(finished), 5)
+    eq("no ladders once the record is attached", numberedLines(finished), 0)
+    check("the finished panel keeps its header", finished.includes("Win: 12/12"), finished)
 }},
 
 {name: "flip: the full record is attached as a file once flips scroll off", fn: async () => {
@@ -444,12 +449,12 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     eq("one file once flips have scrolled off", ctx.files().length, 1)
     eq("named for the command", ctx.files()[0].name, "flips.txt")
-    check("the panel keeps the newest flip", panel.includes("12) ✅ 2200"), panel)
-    check("the oldest flips have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
+    eq("the panel shows no flips once the file carries them", numberedLines(panel), 0)
+    check("the panel still names the run", panel.includes("Flip: 12/12"), panel)
 
     const full = ctx.attached()
-    check("the scrolled off flips are in the file", full.includes(" 1) ✅ 1100"), full)
-    check("the newest flip is in it too", full.includes("12) ✅ 2200"), full)
+    check("the scrolled off flips are in the file", full.includes(" 1) ✅ 1,100"), full)
+    check("the newest flip is in it too", full.includes("12) ✅ 2,200"), full)
     check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
 }},
 
@@ -517,11 +522,11 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
     await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
-    const panel = written[written.length - 1]
+    const panel = written[written.length - 2]
 
-    check("the newest ladder keeps its true number", panel.includes("12) "), panel)
-    check("the oldest shown ladder is the eighth, right-aligned", panel.includes(" 8) "), panel)
-    check("the earlier ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 7) "), panel)
+    check("the newest ladder keeps its true number", panel.includes("11) "), panel)
+    check("the oldest shown ladder is the seventh, right-aligned", panel.includes(" 7) "), panel)
+    check("the earlier ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 6) "), panel)
 }},
 
 {name: "martingale: the ladder file only shows up once lines scroll off", fn: async () => {
@@ -567,7 +572,33 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the scrolled off ladders are in it", full.includes(" 1) ") && full.includes(" 2) "), full)
     check("the newest ladder is in it too", full.includes("12) "), full)
     check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
-    check("the public panel still hides them", !panel.includes(" 1) "), panel)
+    eq("the public panel shows no ladders at all", numberedLines(panel), 0)
+}},
+
+// The panel drops its lines once the record is attached, so a channel where the bot cannot
+// attach files has to get the lines back rather than a header with nothing under it.
+{name: "flip: a record that cannot be attached leaves the lines in the panel", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111", {rejectAttachments: true})
+    await flip.callback({message: ctx.message, args: ["100", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    eq("no file landed", ctx.files().length, 0)
+    eq("the panel carries the newest five instead", numberedLines(panel), 5)
+    check("the newest flip is among them", panel.includes("12) ✅ 2,200"), panel)
+}},
+
+{name: "martingale: a record that cannot be attached leaves the ladders in the panel", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111", {rejectAttachments: true})
+    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    eq("no file landed", ctx.files().length, 0)
+    eq("the panel carries the newest five instead", numberedLines(panel), 5)
+    check("the newest ladder is among them", panel.includes("12) "), panel)
 }},
 
 {name: "martingale: a ladder too long for one message still fits one file", fn: async () => {
@@ -725,7 +756,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const board = await pressTop(["points"], guildWith("111", "222"))
     check("111 ranks first on 1050 settled, not 1000 stored", board.indexOf("user111") < board.indexOf("user222"), board)
-    check("the settled total is displayed", board.includes("1050"), board)
+    check("the settled total is displayed", board.includes("1,050"), board)
 }},
 
 {name: "top peak: a spent down high still outranks a bigger current balance", fn: async () => {
@@ -734,7 +765,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const board = await pressTop(["peak"], guildWith("111", "222"))
     check("111 ranks first on a 5000 peak while holding 10", board.indexOf("user111") < board.indexOf("user222"), board)
-    check("the peak is displayed", board.includes("5000"), board)
+    check("the peak is displayed", board.includes("5,000"), board)
 }},
 
 {name: "top peak: unsettled voice time counts toward the peak", fn: async () => {
@@ -743,7 +774,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const board = await pressTop(["peak"], guildWith("111", "222"))
     check("111 ranks first on a 1050 settled peak", board.indexOf("user111") < board.indexOf("user222"), board)
-    check("the settled peak is displayed", board.includes("1050"), board)
+    check("the settled peak is displayed", board.includes("1,050"), board)
 }},
 
 {name: "top active: unsettled voice time counts toward the ranking", fn: async () => {

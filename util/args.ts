@@ -3,6 +3,7 @@ import { randomInt } from "crypto"
 import { IUser } from "../db/user"
 import isValidNumberArg from "./isValidNumberArg"
 import isValidUserArg from "./isValidUserArg"
+import formatPoints from "./formatPoints"
 import { ITextContext } from "./textCommand"
 import * as dotenv from "dotenv"
 dotenv.config()
@@ -49,12 +50,12 @@ export const parsePoints = async (arg: string, user: IUser, message: Message<boo
     }
 
     if (chosenByUser && points < min) {
-        await message.reply({content: `${noun} at least ${min} points brokie ${process.env.NOPPERS_EMOJI}`})
+        await message.reply({content: `${noun} at least ${formatPoints(min)} points brokie ${process.env.NOPPERS_EMOJI}`})
         return undefined
     }
 
     if (points > user.points) {
-        await message.reply({content: `You only got ${user.points} points lad ${process.env.NOPPERS_EMOJI}`})
+        await message.reply({content: `You only got ${formatPoints(user.points)} points lad ${process.env.NOPPERS_EMOJI}`})
         return undefined
     }
 

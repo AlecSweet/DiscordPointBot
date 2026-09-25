@@ -3,8 +3,8 @@ import * as dotenv from "dotenv"
 dotenv.config()
 
 const LINK_MS = 10 * 60 * 1000
-const IDLE_MS = 2 * 24 * 60 * 60 * 1000
-const ABSOLUTE_MS = 7 * 24 * 60 * 60 * 1000
+const IDLE_MS = 7 * 24 * 60 * 60 * 1000
+const ABSOLUTE_MS = 14 * 24 * 60 * 60 * 1000
 
 const COOKIE_NAME = "pointHistory"
 

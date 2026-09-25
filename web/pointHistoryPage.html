@@ -430,6 +430,7 @@
     svg { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; -webkit-user-select: none; user-select: none }
     .axis { fill: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums }
     .grid { stroke: var(--line) }
+    .floorEdge { stroke: var(--faint); stroke-dasharray: 2 3 }
     .era { stroke: var(--faint); stroke-dasharray: 4 4 }
     .eraLabel { fill: var(--faint); font-size: 11px; font-weight: 600 }
     .vgrid { stroke: var(--line); opacity: .55 }
@@ -587,6 +588,14 @@
                             <span class="track"><span class="knob"></span></span>
                             <span class="label">Color Code</span>
                         </label>
+                        <span class="scaleToggle">
+                            <span class="muted">Points</span>
+                            <span class="help" data-tip="Linear spaces points evenly, so a fixed number of points is always the same height and steady earning reads as a straight line. Log&#8322; spaces them by doublings, so one gridline is one won double-or-nothing at any size: small members stay readable next to millionaires and percentage moves look the same everywhere. Zero and negative balances cannot sit on a doubling scale, so they rest on the floor strip below the dashed line. Each view remembers its own choice.">?</span>
+                            <span class="presets" id="scalePresets">
+                                <button class="tool on" data-yscale="linear">Linear</button>
+                                <button class="tool" data-yscale="log2">Log&#8322;</button>
+                            </span>
+                        </span>
                         <span class="zoomHint">Navigate<span class="help" data-tip="Drag to pan through time, and scroll to zoom in on the moment under the cursor. Scroll sideways or hold Shift while scrolling to pan. On touch, drag to pan and pinch to zoom. Shift-drag picks out a range, and double-click shows everything.">?</span></span>
                         <span class="presets">
                             <button class="tool" data-preset="week">1W</button>
@@ -1000,6 +1009,7 @@ const start = (payload) => {
         topCount: DEFAULT_TOP_COUNT,
         topBy: "peak",
         sort: {by: "when", dir: "asc"},
+        scales: {},
         ranges: {},
         periodViews: {},
         period: null,
@@ -1356,6 +1366,63 @@ const start = (payload) => {
         return String(Math.round(value))
     }
 
+    const FLOOR_BAND_PX = 16
+    const DOUBLING_GAP_PX = 24
+
+    const linearPoints = (points, plotTop, plotBottom, wanted, held) => {
+        let low = 0
+        let high = 1
+        points.forEach(point => {
+            if (point.v < low) low = point.v
+            if (point.v > high) high = point.v
+        })
+        const headroom = Math.max(1, high - low) * 0.05
+        high += headroom
+        low = low < 0 ? low - headroom : Math.max(0, low - headroom)
+        const step = held ? held.step : niceStep(Math.max(1, high - low), wanted)
+        const bottom = held ? held.bottom : Math.floor(low / step) * step
+        const top = held ? held.top : Math.max(bottom + step, Math.ceil(high / step) * step)
+        const toY = value => plotBottom - (value - bottom) / (top - bottom) * (plotBottom - plotTop)
+        const lines = []
+        for (let value = bottom; value <= top + step / 2; value += step) lines.push({at: toY(value), label: short(value)})
+        return {toY: toY, lines: lines, floor: null, hold: {kind: "linear", step: step, bottom: bottom, top: top}}
+    }
+
+    const doublingPoints = (points, plotTop, plotBottom, held) => {
+        let least = Infinity
+        let most = 0
+        let broke = false
+        let owing = false
+        points.forEach(point => {
+            if (point.v <= 0) {
+                broke = true
+                owing = owing || point.v < 0
+                return
+            }
+            if (point.v < least) least = point.v
+            if (point.v > most) most = point.v
+        })
+        const grounded = held ? held.grounded : broke
+        const base = grounded ? plotBottom - FLOOR_BAND_PX : plotBottom
+        const bottomExp = held ? held.bottomExp
+            : least === Infinity ? 0 : Math.max(0, Math.ceil(Math.log2(least)) - 1)
+        const reach = held ? held.topExp - held.bottomExp
+            : Math.max(1, Math.ceil(Math.log2(Math.max(2, most) + 1)) - bottomExp)
+        const stride = Math.max(1, Math.ceil(DOUBLING_GAP_PX * reach / Math.max(1, base - plotTop)))
+        const topExp = held ? held.topExp : bottomExp + stride * Math.ceil(reach / stride)
+        const toY = value => value > 0
+            ? Math.min(base, base - (Math.log2(value) - bottomExp) / (topExp - bottomExp) * (base - plotTop))
+            : plotBottom
+        const lines = []
+        for (let exp = topExp; exp >= bottomExp; exp -= stride) lines.push({at: toY(Math.pow(2, exp)), label: short(Math.pow(2, exp))})
+        return {
+            toY: toY,
+            lines: lines,
+            floor: grounded ? {at: plotBottom, edge: base, label: owing ? "&#8804;0" : "0"} : null,
+            hold: {kind: "log2", bottomExp: bottomExp, topExp: topExp, grounded: grounded},
+        }
+    }
+
     const timeTicks = (from, to, wanted) => {
         const second = 1000
         const minute = 60000
@@ -1437,6 +1504,8 @@ const start = (payload) => {
     let wheelTimer = null
     const pointers = new Map()
     const presetButtons = Array.from(document.querySelectorAll("[data-preset]"))
+    const pointScaleButtons = Array.from(document.querySelectorAll("#scalePresets [data-yscale]"))
+    const yScale = () => state.scales[state.mode] || "linear"
 
     const drawChart = () => {
         const wrap = chart.parentElement
@@ -1447,6 +1516,7 @@ const start = (payload) => {
         const padTop = 12
         const colouring = state.byReason && !inGroup()
         document.getElementById("reasonSwitch").style.display = inGroup() ? "none" : "inline-flex"
+        pointScaleButtons.forEach(button => { button.className = button.dataset.yscale === yScale() ? "tool on" : "tool" })
         const lines = shownUsers().filter(person => seriesOf(person).length > 1)
         document.getElementById("chartTitle").innerHTML = state.mode === "person" ? who(state.person)
             : state.mode === "server" ? "Server Points"
@@ -1484,27 +1554,25 @@ const start = (payload) => {
         const visible = lines.map(person => windowed(seriesOf(person)))
         const framed = visible.map(points => points.filter(point => point.t >= span[0] && point.t <= span[1])).flat()
         const scaled = framed.length ? framed : visible.flat()
-        let low = 0
-        let high = 1
-        scaled.forEach(point => {
-            if (point.v < low) low = point.v
-            if (point.v > high) high = point.v
-        })
-        const headroom = Math.max(1, high - low) * 0.05
-        high += headroom
-        low = low < 0 ? low - headroom : Math.max(0, low - headroom)
         const toX = time => padLeft + (time - span[0]) / Math.max(1, span[1] - span[0]) * (width - padLeft - 10)
         const yLines = Math.max(4, Math.round((height - padBottom - padTop) / 70))
-        const step = heldScale ? heldScale.step : niceStep(Math.max(1, high - low), yLines)
-        const bottom = heldScale ? heldScale.bottom : Math.floor(low / step) * step
-        const top = heldScale ? heldScale.top : Math.max(bottom + step, Math.ceil(high / step) * step)
-        const toY = value => height - padBottom - (value - bottom) / (top - bottom) * (height - padBottom - padTop)
+        const doubling = yScale() === "log2"
+        const held = heldScale !== null && heldScale.kind === (doubling ? "log2" : "linear") ? heldScale : null
+        const yAxis = doubling
+            ? doublingPoints(scaled, padTop, height - padBottom, held)
+            : linearPoints(scaled, padTop, height - padBottom, yLines, held)
+        const toY = yAxis.toY
 
         const ticks = []
-        for (let value = bottom; value <= top + step / 2; value += step) {
-            const y = toY(value).toFixed(1)
+        yAxis.lines.forEach(line => {
+            const y = line.at.toFixed(1)
             ticks.push("<line class='grid' x1='" + padLeft + "' x2='" + width + "' y1='" + y + "' y2='" + y + "'></line>"
-                + "<text class='axis' text-anchor='end' x='" + (padLeft - 8) + "' y='" + (toY(value) + 3.5).toFixed(1) + "'>" + short(value) + "</text>")
+                + "<text class='axis' text-anchor='end' x='" + (padLeft - 8) + "' y='" + (line.at + 3.5).toFixed(1) + "'>" + line.label + "</text>")
+        })
+        if (yAxis.floor !== null) {
+            const edge = yAxis.floor.edge.toFixed(1)
+            ticks.push("<line class='floorEdge' x1='" + padLeft + "' x2='" + width + "' y1='" + edge + "' y2='" + edge + "'></line>"
+                + "<text class='axis' text-anchor='end' x='" + (padLeft - 8) + "' y='" + (yAxis.floor.at + 3.5).toFixed(1) + "'>" + yAxis.floor.label + "</text>")
         }
         const axis = timeTicks(span[0], span[1], Math.max(3, Math.round((width - padLeft) / 130)))
         document.getElementById("chartContext").textContent = state.range === null ? "" : rangeLabel(span[0], span[1])
@@ -1679,7 +1747,7 @@ const start = (payload) => {
                 if (!panning.moved) {
                     if (Math.abs(move.clientX - panning.clientX) <= TAP_SLOP_PX) return
                     panning.moved = true
-                    heldScale = {step: step, bottom: bottom, top: top}
+                    heldScale = yAxis.hold
                     chart.style.cursor = "grabbing"
                     hideTip()
                 }
@@ -1744,7 +1812,7 @@ const start = (payload) => {
             const length = span[1] - span[0]
 
             if (Math.abs(across) > Math.abs(along)) {
-                if (heldScale === null) heldScale = {step: step, bottom: bottom, top: top}
+                if (heldScale === null) heldScale = yAxis.hold
                 state.range = place(span[0] + across * length / Math.max(1, width - padLeft - 10), length)
             } else {
                 heldScale = null
@@ -1775,6 +1843,13 @@ const start = (payload) => {
         applyFilters()
     }
     chart.ondblclick = showEverything
+    pointScaleButtons.forEach(button => {
+        button.onclick = () => {
+            state.scales[state.mode] = button.dataset.yscale
+            heldScale = null
+            drawChart()
+        }
+    })
     presetButtons.forEach(button => {
         button.onclick = () => {
             const length = PRESETS[button.dataset.preset]
