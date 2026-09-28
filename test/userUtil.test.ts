@@ -384,7 +384,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const user = await settleUser("year1")
     eq("points 100 -> 2020", user.points, 2020)
     eq("pointsClaimed 0 -> 1920", user.pointsClaimed, 1920)
-    check("granted reply", msg.replies[0].includes("yearly 1920"), msg.replies[0])
+    check("granted reply", msg.replies[0].includes("yearly 1,920"), msg.replies[0])
 }},
 
 {name: "claimYearly: second claim the same year is refused", fn: async () => {

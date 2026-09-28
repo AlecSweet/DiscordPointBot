@@ -1,5 +1,6 @@
 import { IUser } from "../db/user";
 import ephemeralButton from "../util/ephemeralButton";
+import formatPoints from "../util/formatPoints";
 import textCommand from "../util/textCommand";
 import { getAllUsers } from "../util/userUtil";
 
@@ -75,31 +76,31 @@ const formatServerStats = (users: IUser[]): string => {
     const secLeftAfterHours = secLeftAfterDays % 3600
     const minutes = Math.floor(secLeftAfterHours / 60)
 
-    const pPF = (user.flipsWon + user.flipsLost) > 0 ? (Math.round(((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost)) * 10) / 10).toFixed(1) : 0
-    const pPL = user.flipsLost > 0 ? (Math.round((user.pointsLost / user.flipsLost) * 10) / 10).toFixed(1) : 0
-    const pPW = user.flipsWon > 0 ? (Math.round((user.pointsWon / user.flipsWon) * 10) / 10).toFixed(1) : 0
+    const pPF = (user.flipsWon + user.flipsLost) > 0 ? formatPoints((user.pointsLost + user.pointsWon) / (user.flipsWon + user.flipsLost), 1) : 0
+    const pPL = user.flipsLost > 0 ? formatPoints(user.pointsLost / user.flipsLost, 1) : 0
+    const pPW = user.flipsWon > 0 ? formatPoints(user.pointsWon / user.flipsWon, 1) : 0
 
     return (
 `**Server Stats**
 \`\`\`Ruby
-Existing Points      ${user.points.toLocaleString('en-US')}
-Highest Balance      ${user.maxPoints.toLocaleString('en-US')}
+Existing Points      ${formatPoints(user.points)}
+Highest Balance      ${formatPoints(user.maxPoints)}
 Time Wasted          ${years} years / ${days} days / ${hours} hours / ${minutes} minutes
 
-Points Farmed        ${Math.floor(user.secondsActive/60).toLocaleString('en-US')}
-Points Claimed       ${user.pointsClaimed.toLocaleString('en-US')}
-Total Earnings       ${(user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate).toLocaleString('en-US')}
+Points Farmed        ${formatPoints(Math.floor(user.secondsActive/60))}
+Points Claimed       ${formatPoints(user.pointsClaimed)}
+Total Earnings       ${formatPoints(user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate)}
 
-Debt                 ${Math.max((user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate)) * -1, 0).toLocaleString('en-US')}
+Debt                 ${formatPoints(Math.max((user.points - (user.pointsClaimed + Math.floor(user.secondsActive/60) + defaultPointsAggregate)) * -1, 0))}
 
-Flips                ${(user.flipsWon+user.flipsLost).toLocaleString('en-US')} Total / ${user.flipsWon.toLocaleString('en-US')} Won / ${user.flipsLost.toLocaleString('en-US')} Lost
-Returns              ${(user.pointsWon+user.pointsLost).toLocaleString('en-US')} Total / ${user.pointsWon.toLocaleString('en-US')} Won / ${user.pointsLost.toLocaleString('en-US')} Lost
-Avg Bets             ${pPF.toLocaleString('en-US')} Avg Bet / ${pPW.toLocaleString('en-US')} Avg Win / ${pPL.toLocaleString('en-US')} Avg Loss
+Flips                ${formatPoints(user.flipsWon+user.flipsLost)} Total / ${formatPoints(user.flipsWon)} Won / ${formatPoints(user.flipsLost)} Lost
+Returns              ${formatPoints(user.pointsWon+user.pointsLost)} Total / ${formatPoints(user.pointsWon)} Won / ${formatPoints(user.pointsLost)} Lost
+Avg Bets             ${pPF} Avg Bet / ${pPW} Avg Win / ${pPL} Avg Loss
 
-Points Given         ${user.pointsGiven.toLocaleString('en-US')} Given
-Challenges           ${user.challengesWon.toLocaleString('en-US')} Total / ${user.challengePointsWon.toLocaleString('en-US')} Points
-Wars                 ${user.warsWon.toLocaleString('en-US')} Total / ${user.warPointsWon.toLocaleString('en-US')} Points
-R P S                ${user.rpsWon.toLocaleString('en-US')} Total / ${user.rpsPointsWon.toLocaleString('en-US')} Points
+Points Given         ${formatPoints(user.pointsGiven)} Given
+Challenges           ${formatPoints(user.challengesWon)} Total / ${formatPoints(user.challengePointsWon)} Points
+Wars                 ${formatPoints(user.warsWon)} Total / ${formatPoints(user.warPointsWon)} Points
+R P S                ${formatPoints(user.rpsWon)} Total / ${formatPoints(user.rpsPointsWon)} Points
 \`\`\``
     )
 }

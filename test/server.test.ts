@@ -17,6 +17,7 @@ const check = (name: string, got: string, expected: string) => {
 
 let member: boolean | undefined = true
 let history: string | undefined = '{"people":[]}'
+let version = "v1"
 
 const cookieFrom = (userId: string): string => {
     const session = redeem(`${mintLink(userId)}`.split("#t=")[1]) as ISession
@@ -25,7 +26,7 @@ const cookieFrom = (userId: string): string => {
 
 const main = async () => {
     const server = startWebServer({
-        pointHistory: () => Promise.resolve(history),
+        pointHistory: () => Promise.resolve(history === undefined ? undefined : {body: history, version: version}),
         isMember: () => Promise.resolve(member),
     })
     await new Promise<void>(resolve => server.once("listening", () => resolve()))
@@ -44,6 +45,20 @@ const main = async () => {
         })
 
     const history_ = (userId = "42"): Promise<string> => get("/api/pointHistory", {cookie: cookieFrom(userId)})
+
+    const taggedCookie = cookieFrom("42")
+    const tagged = (headers: Record<string, string> = {}): Promise<string> =>
+        new Promise((resolve, reject) => {
+            const sent = httpRequest({host: "127.0.0.1", port: port, path: "/api/pointHistory",
+                headers: {cookie: taggedCookie, ...headers}, agent: false}, response => {
+                let text = ""
+                response.setEncoding("utf8")
+                response.on("data", chunk => { text += chunk })
+                response.on("end", () => resolve(`${response.statusCode} ${response.headers.etag ?? "no-etag"} ${text}`))
+            })
+            sent.on("error", err => reject(new Error(`GET failed: ${(err as Error).message}`)))
+            sent.end()
+        })
 
     check("the health route answers without a session", await get("/health"), "200 ok")
 
@@ -76,6 +91,27 @@ const main = async () => {
         for (let sent = 0; sent < 61; sent++) last = await get(path, {"x-forwarded-for": address})
         return last
     }
+
+    check("the history carries an ETag naming the build it came from",
+        await tagged(), `200 "v1" {"people":[]}`)
+
+    check("a matching If-None-Match is answered 304 with no body",
+        await tagged({"if-none-match": '"v1"'}), `304 "v1" `)
+
+    check("a stale If-None-Match is answered in full",
+        await tagged({"if-none-match": '"old"'}), `200 "v1" {"people":[]}`)
+
+    version = "v2"
+    history = '{"people":[1]}'
+    check("once the build changes the old tag no longer matches",
+        await tagged({"if-none-match": '"v1"'}), `200 "v2" {"people":[1]}`)
+    version = "v1"
+    history = '{"people":[]}'
+
+    member = false
+    check("a 304 is never served to someone who is not a member",
+        await tagged({"if-none-match": '"v1"'}), "403 no-etag you are not in the server")
+    member = true
 
     check("the unauthenticated page is throttled too, not just the data route",
         (await flood("/", "203.0.113.50")).split(" ")[0], "429")

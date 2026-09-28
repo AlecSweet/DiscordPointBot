@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import { Guild } from "discord.js"
 import { allPointEvents, IPointEvent } from "../db/pointEvent"
 import { departedMember, IMemberName, memberNames } from "../util/namedPointEvents"
@@ -28,9 +29,25 @@ const indexer = () => {
     }
 }
 
+const sharedGroups = (events: IPointEvent[]): Set<string> => {
+    const owners = new Map<string, string>()
+    const shared = new Set<string>()
+
+    events.forEach(event => {
+        if (event.messageId === undefined) return
+
+        const owner = owners.get(event.messageId)
+        if (owner === undefined) owners.set(event.messageId, event.userId)
+        else if (owner !== event.userId) shared.add(event.messageId)
+    })
+    return shared
+}
+
 export const buildPointHistoryPayload = (events: IPointEvent[], names: Map<string, IMemberName>): IPointHistoryPayload => {
     const reasons = indexer()
     const commands = indexer()
+    const groups = indexer()
+    const shared = sharedGroups(events)
     const rowsByUser = new Map<string, (number | null)[][]>()
 
     events.forEach(event => {
@@ -42,6 +59,7 @@ export const buildPointHistoryPayload = (events: IPointEvent[], names: Map<strin
             reasons.of(event.reason),
             event.command === undefined ? -1 : commands.of(event.command),
             event.backfilled ? 1 : 0,
+            event.messageId !== undefined && shared.has(event.messageId) ? groups.of(event.messageId) : -1,
         ])
         rowsByUser.set(event.userId, rows)
     })
@@ -62,21 +80,35 @@ const signature = (events: IPointEvent[], names: Map<string, IMemberName>): stri
 
 const REBUILD_MS = 10 * 1000
 
-let served: {signature: string, body: string, builtAt: number} | undefined
+export interface IServedHistory {
+    body: string
+    version: string
+}
 
-const pointHistoryBody = async (guild: Guild, now = Date.now()): Promise<string> => {
-    if (served !== undefined && now - served.builtAt < REBUILD_MS) return served.body
+const versionOf = (signature: string): string =>
+    createHash("sha1").update(signature).digest("base64url").slice(0, 16)
+
+let served: {signature: string, body: string, version: string, builtAt: number} | undefined
+
+const pointHistoryBody = async (guild: Guild, now = Date.now()): Promise<IServedHistory> => {
+    if (served !== undefined && now - served.builtAt < REBUILD_MS) return {body: served.body, version: served.version}
 
     const events = await allPointEvents()
     const names = await memberNames(guild)
-
     const current = signature(events, names)
+
+    if (served !== undefined && served.signature === current) {
+        served = {...served, builtAt: now}
+        return {body: served.body, version: served.version}
+    }
+
     served = {
         signature: current,
-        body: served?.signature === current ? served.body : JSON.stringify(buildPointHistoryPayload(events, names)),
+        body: JSON.stringify(buildPointHistoryPayload(events, names)),
+        version: versionOf(current),
         builtAt: now,
     }
-    return served.body
+    return {body: served.body, version: served.version}
 }
 
 export default pointHistoryBody

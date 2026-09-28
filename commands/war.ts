@@ -2,6 +2,7 @@ import { Mutex, withTimeout } from "async-mutex";
 import { getWar, insertWar, updateWar } from "../db/war";
 import isValidUserArg from "../util/isValidUserArg";
 import { parseTarget } from "../util/args";
+import formatPoints from "../util/formatPoints";
 import { inc, updateUser } from "../util/userUtil";
 import getRandomValues from 'get-random-values'
 import { cancelWar, payWar } from "../util/warUtil";
@@ -61,7 +62,7 @@ const war = textCommand({
         }
 
         const warMessage = await message.channel.send({
-            content: `<@${message.author.id}> wants a war ${targetId ? ` with <@${targetId}>` : ``}, theres ${tempPoints} points on the line ${process.env.PEPO_SHAKE_EMOJI}\nWar will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
+            content: `<@${message.author.id}> wants a war ${targetId ? ` with <@${targetId}>` : ``}, theres ${formatPoints(tempPoints)} points on the line ${process.env.PEPO_SHAKE_EMOJI}\nWar will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
             components: [{
                 type: 1,
                 components: [
@@ -132,7 +133,7 @@ const war = textCommand({
                     const oPInital = war.ownerBet
                     let oP = war.ownerBet
                     const initialRow = `Bet  ${getFormattedNumbers(oP, aP)} ⠀`
-                    const numSpace = (oP + aP).toString().length + 2 - message.author.username.length
+                    const numSpace = formatPoints(oP + aP).length + 2 - message.author.username.length
                     const space = " ".repeat(numSpace > 0 ? numSpace : 0)
                     const nameRow = `   ${message.author.username}${space} | ${ i.user.username}`
                     const rounds: string[] = [nameRow, initialRow]
@@ -166,13 +167,13 @@ const war = textCommand({
                     })
 
                     if (oP <= 0) {
-                        await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${message.author.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${targetUser.id}> won ${oPInital} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
+                        await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${message.author.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${targetUser.id}> won ${formatPoints(oPInital)} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
                         await payWar(message.author.id, targetUser.id, message.author.id, aP, oPInital, ctx.origin)
                         if (oPInital >= 100) {
                             await assignDustedRole(guild, message.author.id)
                         }
                     } else {
-                        await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${targetUser.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${message.author.id}> won ${apInital} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
+                        await acceptMessage.edit({content: `War accepted by <@${targetUser.id}> ${process.env.PEPO_SMASH_EMOJI}\`\`\`${rounds.join('\n')}\`\`\`<@${targetUser.id}> got dusted ${process.env.SMODGE_EMOJI}\n<@${message.author.id}> won ${formatPoints(apInital)} points ${process.env.NICE_EMOJI}`}).catch((err) => console.log(err))
                         await payWar(message.author.id, message.author.id, targetUser.id, oP, apInital, ctx.origin)
                         if (apInital >= 100) {
                             await assignDustedRole(guild, targetUser.id)
@@ -196,10 +197,8 @@ const war = textCommand({
 export default war
 
 const getFormattedNumbers = (oP: number, aP: number): string => {
-    const maxD = (oP + aP).toString().length
-    const oPstring = oP.toString()
-    const aPstring = aP.toString()
-    const oPform = oPstring + " ".repeat((maxD - oPstring.length))
-    const aPform = aPstring + " ".repeat((maxD - aPstring.length))
+    const maxD = formatPoints(oP + aP).length
+    const oPform = formatPoints(oP).padEnd(maxD)
+    const aPform = formatPoints(aP).padEnd(maxD)
     return `${oPform} | ${aPform}`
 }

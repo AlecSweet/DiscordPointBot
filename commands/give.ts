@@ -1,4 +1,5 @@
 import { parseTarget, parsePoints } from "../util/args";
+import formatPoints from "../util/formatPoints";
 import textCommand from "../util/textCommand";
 import withUserLock from "../util/userLock";
 import { inc, updateUser } from "../util/userUtil";
@@ -30,7 +31,7 @@ const give = textCommand({
             await updateUser(gifteeId, {points: inc(points), pointsRecieved: inc(points)}, {...ctx.origin, reason: "giftReceived"})
             return sender
         })
-        await ctx.message.reply({content: `You gave <@${gifteeId}> ${points} points ${process.env.NICE_EMOJI} You now have ${author.points} points`})
+        await ctx.message.reply({content: `You gave <@${gifteeId}> ${formatPoints(points)} points ${process.env.NICE_EMOJI} You now have ${formatPoints(author.points)} points`})
     })
 })
 

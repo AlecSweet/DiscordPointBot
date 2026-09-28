@@ -2,6 +2,7 @@ import { Mutex, withTimeout } from "async-mutex";
 import { getChallenge, insertChallenge, updateChallenge } from "../db/challenge";
 import isValidUserArg from "../util/isValidUserArg";
 import { parseTarget, parsePoints } from "../util/args";
+import formatPoints from "../util/formatPoints";
 import { IPointOrigin } from "../db/pointEvent";
 import { inc, updateUser } from "../util/userUtil";
 import getRandomValues from 'get-random-values'
@@ -63,7 +64,7 @@ const challenge = textCommand({
         }
 
         const challengeMessage = await message.channel.send({
-            content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetId}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}. Challenge will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
+            content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetId}> for up to ${formatPoints(challengePoints)} points` : `anyone for ${formatPoints(challengePoints)} points`}. Challenge will be canceled <t:${(Math.floor(new Date().getTime() / 1000) + (3 * 60))}:R>`, 
             components: [{
                 type: 1,
                 components: [
@@ -113,7 +114,7 @@ const challenge = textCommand({
                         }
 
                         if(targetId === '' && targetUser.points < challengePoints){
-                            await i.reply({content: `You only got ${targetUser.points} ${process.env.NOPPERS_EMOJI}`})
+                            await i.reply({content: `You only got ${formatPoints(targetUser.points)} ${process.env.NOPPERS_EMOJI}`})
                             return undefined
                         }
 
@@ -141,12 +142,12 @@ const challenge = textCommand({
                     challengeCollector.stop()
 
                     await challengeMessage.edit({
-                        content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetUser.id}> for up to ${challengePoints} points` : `anyone for ${challengePoints} points`}.`, 
+                        content: `<@${message.author.id}> has challenged ${targetId ? `<@${targetUser.id}> for up to ${formatPoints(challengePoints)} points` : `anyone for ${formatPoints(challengePoints)} points`}.`, 
                         components: []
                     })
 
                     const acceptMessage = await challengeMessage.channel.send({
-                        content: `Challenge accepted by <@${targetUser.id}> for ${acceptBet} points ${process.env.PEPO_SMASH_EMOJI}`, 
+                        content: `Challenge accepted by <@${targetUser.id}> for ${formatPoints(acceptBet)} points ${process.env.PEPO_SMASH_EMOJI}`, 
                     })
                     await Promise.all([
                         [
@@ -180,7 +181,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
     
     if(arr[0] < 128) {
         await acceptMessage.channel.send({
-            content: `<@${ownerId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
+            content: `<@${ownerId}> wins ${formatPoints(acceptBet)} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
         const user = await payChallenge(ownerId, ownerId, targetId, acceptBet, origin)
         if (acceptBet >= 100 && user.points < 5) {
@@ -188,7 +189,7 @@ const finishBet = async (acceptBet: number, acceptMessage: Message<boolean>, tar
         }
     } else {
         await acceptMessage.channel.send({
-            content: `<@${targetId}> wins ${acceptBet} points ${process.env.NICE_EMOJI}`, 
+            content: `<@${targetId}> wins ${formatPoints(acceptBet)} points ${process.env.NICE_EMOJI}`, 
         }).catch((err) => console.log(err))
         const user = await payChallenge(ownerId, targetId, ownerId, acceptBet, origin)
         if (acceptBet >= 100 && user.points < 5) {

@@ -2,6 +2,7 @@ import { Guild } from "discord.js";
 import userModel from "../db/user";
 import ephemeralButton from "../util/ephemeralButton";
 import { MAX_MESSAGE_LENGTH } from "../util/fitToMessageLimit";
+import formatPoints from "../util/formatPoints";
 import isValidNumberArg from "../util/isValidNumberArg";
 import { deleteMarkdown } from "../util/isValidUserArg";
 import recordFile from "../util/recordFile";
@@ -296,11 +297,11 @@ ${entries.join('')}\`\`\``
 
 const getValueByLeaderBoardType = (user, type: string): string => {
     if (type === 'worstFlipper' || type === 'bestFlipper') {
-        return `Avg Win: ${(Math.round(user.avgPPW * 10) / 10).toFixed(1)} / Avg Loss: ${(Math.round(user.avgPPL * 10) / 10).toFixed(1)}`
+        return `Avg Win: ${formatPoints(user.avgPPW, 1)} / Avg Loss: ${formatPoints(user.avgPPL, 1)}`
     }
 
     if (type === 'highRoller') {
-        return `Avg Bet: ${(Math.round(user.avgPPB * 10) / 10).toFixed(1)}`
+        return `Avg Bet: ${formatPoints(user.avgPPB, 1)}`
     }
 
     if (type === 'secondsActive') {
@@ -320,6 +321,10 @@ const getValueByLeaderBoardType = (user, type: string): string => {
 
         return (Math.round(numCheck * 10000) / 10000).toFixed(4);
     }
-   
+
+    if (Number.isInteger(user[type])) {
+        return formatPoints(numCheck)
+    }
+
     return user[type]
 }

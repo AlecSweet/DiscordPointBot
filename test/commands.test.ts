@@ -152,7 +152,7 @@ interface IFakeInteraction {
 
 type IFakeCollectorHandler = (interaction?: IFakeInteraction) => Promise<void>
 
-const fakeContext = (authorId: string) => {
+const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
     const replies: string[] = []
     const privateReplies: IFakeInteractionPayload[] = []
     const edits: IFakePayload[] = []
@@ -167,7 +167,10 @@ const fakeContext = (authorId: string) => {
         if (payload.files !== undefined) files = payload.files
     }
     const sent = {
-        edit: async (payload: IFakePayload) => { edits.push(payload); apply(payload); return sent },
+        edit: async (payload: IFakePayload) => {
+            if (rejectAttachments && payload.files !== undefined) throw new Error("Missing Permissions")
+            edits.push(payload); apply(payload); return sent
+        },
         delete: async () => { deleted = true; return sent },
         react: async () => {},
         channel: {} as unknown,
@@ -386,9 +389,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
     const panel = written[written.length - 1]
 
-    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1100"), panel)
-    check("the second flip is on the next line", panel.includes("2) ❌ 1000"), panel)
-    check("the fourth flip keeps counting", panel.includes("4) ❌ 1000"), panel)
+    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1,100"), panel)
+    check("the second flip is on the next line", panel.includes("2) ❌ 1,000"), panel)
+    check("the fourth flip keeps counting", panel.includes("4) ❌ 1,000"), panel)
     eq("no file while the panel shows everything", ctx.files().length, 0)
 }},
 
@@ -403,7 +406,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the last flip has doubled five times", panel.includes("5) ✅ 320"), panel)
 }},
 
-{name: "flip: five lines show while it is going and once it is done", fn: async () => {
+{name: "flip: five lines show while it is going, none once the record is attached", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -416,10 +419,11 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("five lines on the last running panel", numberedLines(running), 5)
     check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
     check("the sixth flip has already scrolled off", !running.includes(" 6) "), running)
-    eq("still five lines once it is done", numberedLines(finished), 5)
+    eq("no lines once the record is attached", numberedLines(finished), 0)
+    check("the finished panel keeps its header", finished.includes("Flip: 12/12"), finished)
 }},
 
-{name: "martingale: five lines show while it is going and once it is done", fn: async () => {
+{name: "martingale: five ladders show while it is going, none once the record is attached", fn: async () => {
     rollSequence(255)
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
@@ -432,7 +436,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("five ladders on the last running panel", numberedLines(running), 5)
     check("the running panel keeps the newest five", running.includes(" 7) ") && running.includes("11) "), running)
     check("the sixth ladder has already scrolled off", !running.includes(" 6) "), running)
-    eq("still five ladders once it is done", numberedLines(finished), 5)
+    eq("no ladders once the record is attached", numberedLines(finished), 0)
+    check("the finished panel keeps its header", finished.includes("Win: 12/12"), finished)
 }},
 
 {name: "flip: the full record is attached as a file once flips scroll off", fn: async () => {
@@ -444,12 +449,12 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     eq("one file once flips have scrolled off", ctx.files().length, 1)
     eq("named for the command", ctx.files()[0].name, "flips.txt")
-    check("the panel keeps the newest flip", panel.includes("12) ✅ 2200"), panel)
-    check("the oldest flips have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 2) "), panel)
+    eq("the panel shows no flips once the file carries them", numberedLines(panel), 0)
+    check("the panel still names the run", panel.includes("Flip: 12/12"), panel)
 
     const full = ctx.attached()
-    check("the scrolled off flips are in the file", full.includes(" 1) ✅ 1100"), full)
-    check("the newest flip is in it too", full.includes("12) ✅ 2200"), full)
+    check("the scrolled off flips are in the file", full.includes(" 1) ✅ 1,100"), full)
+    check("the newest flip is in it too", full.includes("12) ✅ 2,200"), full)
     check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
 }},
 
@@ -517,11 +522,11 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await seed("111", {points: 1000})
     const ctx = fakeContext("111")
     await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
-    const panel = written[written.length - 1]
+    const panel = written[written.length - 2]
 
-    check("the newest ladder keeps its true number", panel.includes("12) "), panel)
-    check("the oldest shown ladder is the eighth, right-aligned", panel.includes(" 8) "), panel)
-    check("the earlier ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 7) "), panel)
+    check("the newest ladder keeps its true number", panel.includes("11) "), panel)
+    check("the oldest shown ladder is the seventh, right-aligned", panel.includes(" 7) "), panel)
+    check("the earlier ladders have scrolled off", !panel.includes(" 1) ") && !panel.includes(" 6) "), panel)
 }},
 
 {name: "martingale: the ladder file only shows up once lines scroll off", fn: async () => {
@@ -567,7 +572,33 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the scrolled off ladders are in it", full.includes(" 1) ") && full.includes(" 2) "), full)
     check("the newest ladder is in it too", full.includes("12) "), full)
     check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
-    check("the public panel still hides them", !panel.includes(" 1) "), panel)
+    eq("the public panel shows no ladders at all", numberedLines(panel), 0)
+}},
+
+// The panel drops its lines once the record is attached, so a channel where the bot cannot
+// attach files has to get the lines back rather than a header with nothing under it.
+{name: "flip: a record that cannot be attached leaves the lines in the panel", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111", {rejectAttachments: true})
+    await flip.callback({message: ctx.message, args: ["100", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    eq("no file landed", ctx.files().length, 0)
+    eq("the panel carries the newest five instead", numberedLines(panel), 5)
+    check("the newest flip is among them", panel.includes("12) ✅ 2,200"), panel)
+}},
+
+{name: "martingale: a record that cannot be attached leaves the ladders in the panel", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111", {rejectAttachments: true})
+    await martingale.callback({message: ctx.message, args: ["10", "12"], guild: guildWith("111")})
+    const panel = written[written.length - 1]
+
+    eq("no file landed", ctx.files().length, 0)
+    eq("the panel carries the newest five instead", numberedLines(panel), 5)
+    check("the newest ladder is among them", panel.includes("12) "), panel)
 }},
 
 {name: "martingale: a ladder too long for one message still fits one file", fn: async () => {
@@ -725,7 +756,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const board = await pressTop(["points"], guildWith("111", "222"))
     check("111 ranks first on 1050 settled, not 1000 stored", board.indexOf("user111") < board.indexOf("user222"), board)
-    check("the settled total is displayed", board.includes("1050"), board)
+    check("the settled total is displayed", board.includes("1,050"), board)
 }},
 
 {name: "top peak: a spent down high still outranks a bigger current balance", fn: async () => {
@@ -734,7 +765,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const board = await pressTop(["peak"], guildWith("111", "222"))
     check("111 ranks first on a 5000 peak while holding 10", board.indexOf("user111") < board.indexOf("user222"), board)
-    check("the peak is displayed", board.includes("5000"), board)
+    check("the peak is displayed", board.includes("5,000"), board)
 }},
 
 {name: "top peak: unsettled voice time counts toward the peak", fn: async () => {
@@ -743,7 +774,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     const board = await pressTop(["peak"], guildWith("111", "222"))
     check("111 ranks first on a 1050 settled peak", board.indexOf("user111") < board.indexOf("user222"), board)
-    check("the settled peak is displayed", board.includes("1050"), board)
+    check("the settled peak is displayed", board.includes("1,050"), board)
 }},
 
 {name: "top active: unsettled voice time counts toward the ranking", fn: async () => {
@@ -1109,8 +1140,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("each reason listed once", payload.reasons.join(","), "flip,accrual")
     eq("each command listed once", payload.commands.join(","), "flip")
     eq("each person holds their own rows", payload.people.map(person => person.rows.length).join(","), "2,1")
-    eq("a row is time, delta, balance, reason, command, recovered",
-        payload.people[0].rows[0].join(","), `${Date.parse("2024-01-01T00:00:00Z")},-10,90,0,0,0`)
+    eq("a row is time, delta, balance, reason, command, recovered, group",
+        payload.people[0].rows[0].join(","), `${Date.parse("2024-01-01T00:00:00Z")},-10,90,0,0,0,-1`)
     eq("rows stay oldest first within a person",
         payload.people[0].rows.map(row => row[1]).join(","), "-10,20")
     eq("an event with no command says so with -1", payload.people[1].rows[0][4], -1)
@@ -1121,21 +1152,62 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         `${payload.people[1].username}/${payload.people[1].nickname}`, "null/null")
 }},
 
+// One command writes every event of a transaction under its own message id, so the payload
+// groups by that. Only groups touching more than one person are indexed, which keeps the
+// column off the 26,000 flips that can never use it.
+{name: "a gift writes both sides under the one command message", fn: async () => {
+    await seed("111", {points: 500})
+    await seed("222", {points: 0})
+    const ctx = fakeContext("111")
+    await give.callback({message: ctx.message, args: ["<@222>", "200"], guild: guildWith("111", "222")})
+
+    const gift = await pointEventModel.find({reason: {$in: ["giftSent", "giftReceived"]}}).lean()
+    eq("both sides recorded", gift.length, 2)
+    eq("under the one message", gift[0].messageId, gift[1].messageId)
+    check("which is the command message", gift[0].messageId === "msg-111", `${gift[0].messageId}`)
+    check("the two sides are different people", gift[0].userId !== gift[1].userId,
+        `${gift[0].userId} / ${gift[1].userId}`)
+}},
+
+{name: "point history payload: only groups that cross people are given an index", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "111", seq: 1, delta: -200, balance: 300, reason: "giftSent", command: "give",
+            messageId: "msg-a", createdAt: new Date("2024-02-01T00:00:00Z")},
+        {userId: "222", seq: 1, delta: 200, balance: 200, reason: "giftReceived", command: "give",
+            messageId: "msg-a", createdAt: new Date("2024-02-01T00:00:01Z")},
+        {userId: "111", seq: 2, delta: -10, balance: 290, reason: "flip", command: "flip",
+            messageId: "msg-b", createdAt: new Date("2024-02-02T00:00:00Z")},
+        {userId: "111", seq: 3, delta: 10, balance: 300, reason: "flip", command: "flip",
+            messageId: "msg-b", createdAt: new Date("2024-02-02T00:00:01Z")},
+        {userId: "111", seq: 4, delta: 5, balance: 305, reason: "accrual",
+            createdAt: new Date("2024-02-03T00:00:00Z")},
+    ])
+
+    const guild = asGuild(guildWith("111", "222"))
+    const payload = buildPointHistoryPayload(await allPointEvents(), await memberNames(guild))
+    const groupOf = (person: number, row: number) => payload.people[person].rows[row][6]
+
+    check("the two sides of the gift share an index", groupOf(0, 0) === groupOf(1, 0) && groupOf(0, 0) !== -1,
+        `${groupOf(0, 0)} / ${groupOf(1, 0)}`)
+    eq("a flip run held by one person is not indexed", `${groupOf(0, 1)},${groupOf(0, 2)}`, "-1,-1")
+    eq("an event with no group at all says -1", groupOf(0, 3), -1)
+}},
+
 {name: "point history payload: the served body is rebuilt once a new event lands", fn: async () => {
     await seed("111", {points: 1000})
     const guild = asGuild(guildWith("111"))
 
     const at = Date.now()
-    const before = await pointHistoryBody(guild, at)
+    const before = (await pointHistoryBody(guild, at)).body
     eq("served as json", JSON.parse(before).people.length, 0)
-    check("the same body is handed out again", await pointHistoryBody(guild, at) === before)
+    check("the same body is handed out again", (await pointHistoryBody(guild, at)).body === before)
 
     rollSequence(0)
     await flip.callback({message: fakeContext("111").message, args: ["25"], guild: guildWith("111")})
 
-    check("a rebuild waits out the throttle", await pointHistoryBody(guild, at + 5000) === before)
+    check("a rebuild waits out the throttle", (await pointHistoryBody(guild, at + 5000)).body === before)
 
-    const after = JSON.parse(await pointHistoryBody(guild, at + 11000))
+    const after = JSON.parse((await pointHistoryBody(guild, at + 11000)).body)
     eq("the new flip is in the rebuilt body", after.people[0].rows.length, 1)
     eq("under the member's name", after.people[0].nickname, "nick111")
 }},
@@ -1162,19 +1234,19 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const member = raw.members.cache.get("111")
 
     const at = Date.now()
-    const before = JSON.parse(await pointHistoryBody(guild, at))
+    const before = JSON.parse((await pointHistoryBody(guild, at)).body)
     eq("named as they were", `${before.people.length}`, "0")
 
     await pointEventModel.collection.insertOne({userId: "111", seq: 1, delta: -10, balance: 990,
         reason: "flip", command: "flip", createdAt: new Date()})
     clearPointEvents()
 
-    const named = JSON.parse(await pointHistoryBody(guild, at + 11000))
+    const named = JSON.parse((await pointHistoryBody(guild, at + 11000)).body)
     eq("the nickname is served", named.people[0].nickname, "nick111")
     eq("so is the username behind it", named.people[0].username, "name111")
 
     if (member !== undefined) member.user.username = "renamed111"
-    const renamed = JSON.parse(await pointHistoryBody(guild, at + 22000))
+    const renamed = JSON.parse((await pointHistoryBody(guild, at + 22000)).body)
     eq("the new username is served, not the cached one", renamed.people[0].username, "renamed111")
 }},
 

@@ -34,7 +34,7 @@ const main = async () => {
         await ready
 
         const guild = await client.guilds.fetch(guildId)
-        const body = await pointHistoryBody(guild)
+        const {body} = await pointHistoryBody(guild)
         writeFileSync(outPath, body)
 
         const payload = JSON.parse(body)

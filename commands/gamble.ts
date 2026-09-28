@@ -7,6 +7,7 @@ import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/fli
 import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import formatNet from "../util/formatNet";
+import formatPoints from "../util/formatPoints";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
 import textCommand from "../util/textCommand";
@@ -14,7 +15,7 @@ import withUserLock from "../util/userLock";
 import { isShuttingDown } from "../util/shuttingDown";
 import { whileSettling } from "../util/settling";
 import recordFile from "../util/recordFile";
-import sendPanel from "../util/sendPanel";
+import sendPanel, { IPanel } from "../util/sendPanel";
 dotenv.config()
 
 const COUNTDOWN_MS = 3000
@@ -66,27 +67,27 @@ interface IFlipResult {
     points: number
 }
 
-const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number, net: number, bet: number, final = ''): any => {
+const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number, net: number, bet: number, final = '', record = formatRecord(results)): any => {
     const wins = results.filter(result => result.won).length
     const losses = results.length - wins
+
+    const header = `Points: ${formatPoints(user.points)} (${formatNet(net)})   Flip: ${results.length}/${maxFlips} (${wins}-${losses})   Bet: ${formatPoints(bet)}`
 
     const build = (body: string) =>
 `**<@${user.id}>'s Flips**
 \`\`\`ansi
-Points: ${user.points} (${formatNet(net)})   Flip: ${results.length}/${maxFlips} (${wins}-${losses})   Bet: ${bet}
-
-${body}
+${body === '' ? header : `${header}\n\n${body}`}
 \`\`\`
 ${final}`
 
-    return {content: fitToMessageLimit(build, formatRecord(results))}
+    return {content: fitToMessageLimit(build, record)}
 }
 
 const renderFlips = (results: IFlipResult[], from: number): string => {
     const width = String(from + results.length).length
     return results
         .map((result, index) =>
-            `${String(from + index + 1).padStart(width)}) ${result.won ? WIN : LOSS} ${result.points}`)
+            `${String(from + index + 1).padStart(width)}) ${result.won ? WIN : LOSS} ${formatPoints(result.points)}`)
         .join('\n')
 }
 
@@ -96,20 +97,26 @@ const formatRecord = (results: IFlipResult[]): string =>
 
 const getNetLine = (net: number): string => {
     if (net > 0) {
-        return `Up ${net} points ${process.env.NICE_EMOJI}`
+        return `Up ${formatPoints(net)} points ${process.env.NICE_EMOJI}`
     }
     if (net < 0) {
-        return `Down ${Math.abs(net)} points ${process.env.SMODGE_EMOJI}`
+        return `Down ${formatPoints(Math.abs(net))} points ${process.env.SMODGE_EMOJI}`
     }
     return `${process.env.SHRUGGERS_EMOJI}`
 }
 
-const finishFlips = async (flipMessage: Message<boolean>, results: IFlipResult[], panel: {content: string}) => {
-    const scrolledOff = results.length > LINES
+const finishFlips = async (flipMessage: Message<boolean>, results: IFlipResult[], build: (record?: string) => {content: string}) => {
+    const send = (panel: IPanel) => sendPanel(options => flipMessage.edit(options), panel)
 
-    await sendPanel(options => flipMessage.edit(options), {
-        ...panel,
-        ...recordFile(scrolledOff ? renderFlips(results, 0) : undefined, RECORD_FILE)
+    if (results.length <= LINES) {
+        await send(build())
+        return
+    }
+
+    await send({
+        ...build(''),
+        fallbackContent: build().content,
+        ...recordFile(renderFlips(results, 0), RECORD_FILE)
     })
 }
 
@@ -126,8 +133,8 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
         await sleep(Math.max(0, deadline - Date.now()))
 
         if (isShuttingDown()) {
-            await finishFlips(flipMessage, results, getMessageContent(user, results, maxFlips, user.points - startingPoints,
-                flipAll ? user.points : points, RESTARTING))
+            await finishFlips(flipMessage, results, record => getMessageContent(user, results, maxFlips, user.points - startingPoints,
+                flipAll ? user.points : points, RESTARTING, record))
             return
         }
 
@@ -145,15 +152,15 @@ const flipMultiple = async (guild: Guild, user: IUser, points: number, message: 
         const broke = flipAll ? !won : flipsLeft > 0 && user.points < points
 
         if (broke) {
-            await finishFlips(flipMessage, results, getMessageContent(user, results, maxFlips, net, wager,
-                flipAll ? `Sit` : `You ain't got ${points}. Sit`))
+            await finishFlips(flipMessage, results, record => getMessageContent(user, results, maxFlips, net, wager,
+                flipAll ? `Sit` : `You ain't got ${formatPoints(points)}. Sit`, record))
             await checkAndAssignDusted(guild, user, wager)
             return
         }
 
         if (flipsLeft === 0) {
-            await finishFlips(flipMessage, results, getMessageContent(user, results, maxFlips, net, wager,
-                flipAll ? `You made it through ${process.env.PEEPO_COMFY_EMOJI}` : `${getNetLine(net)}`))
+            await finishFlips(flipMessage, results, record => getMessageContent(user, results, maxFlips, net, wager,
+                flipAll ? `You made it through ${process.env.PEEPO_COMFY_EMOJI}` : `${getNetLine(net)}`, record))
             await checkAndAssignDusted(guild, user, wager)
             return
         }
@@ -185,8 +192,8 @@ const flipOnce = async (guild: Guild, user: IUser, points: number, message: Mess
     setTimeout(() => { react(won ? '✅' : '❌') }, 3 * TICK_MS)
     setTimeout(() => {
         message.reply({content: won ?
-            `You won ${points} points ${process.env.NICE_EMOJI} You've got ${user.points} points now. You rolled ${rollFormatted} of 256` :
-            `${process.env.SMODGE_EMOJI} ${points} points deleted, later. You're down to ${user.points} points. You rolled ${rollFormatted} of 256`})
+            `You won ${formatPoints(points)} points ${process.env.NICE_EMOJI} You've got ${formatPoints(user.points)} points now. You rolled ${rollFormatted} of 256` :
+            `${process.env.SMODGE_EMOJI} ${formatPoints(points)} points deleted, later. You're down to ${formatPoints(user.points)} points. You rolled ${rollFormatted} of 256`})
             .catch((err) => console.log(err))
         checkAndAssignDusted(guild, user, points)
     }, 3 * TICK_MS + REVEAL_MS)

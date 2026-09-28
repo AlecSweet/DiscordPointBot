@@ -2,6 +2,7 @@ import { Message } from "discord.js";
 import moment from "moment";
 import { IPointOrigin } from "../db/pointEvent";
 import { IUser } from "../db/user";
+import formatPoints from "./formatPoints";
 import { inc, set, updateUser } from "./userUtil";
 
 interface IClaim {
@@ -78,7 +79,7 @@ const claim = async (user: IUser, message: Message<boolean>, claimType: IClaim, 
         pointsClaimed: inc(claimType.points),
         [claimType.field]: set(new Date()),
     }, {...origin, reason: claimType.field})
-    message.reply({content: `You got your ${claimType.name} ${claimType.points} ${process.env.DOGEGE_JAM_EMOJI}`})
+    message.reply({content: `You got your ${claimType.name} ${formatPoints(claimType.points)} ${process.env.DOGEGE_JAM_EMOJI}`})
 }
 
 export const claimByName = (user: IUser, message: Message<boolean>, name: ClaimName, origin: IPointOrigin) =>
