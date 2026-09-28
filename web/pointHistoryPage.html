@@ -542,6 +542,7 @@
         <button class="tab" data-view="rankings">Rankings</button>
     </nav>
     <span class="divided" id="meta"></span>
+    <button class="tool" type="button" id="refresh" disabled>Refresh</button>
     <div class="viewToggles">
         <label class="switch">
             <input type="checkbox" id="hideSettled" checked>
@@ -861,7 +862,15 @@ const start = (payload) => {
         return first === -1 ? 0 : rows.slice(0, first + 1).reduce((balance, row) => balance - row[1], rows[first][2])
     }
 
-    const people = payload.people.map((person, index) => {
+    let people = []
+    let events = []
+    let liveFrom = null
+    let eraAt = null
+    let serverTotals = null
+    let serverLine = null
+    const lostReasons = new Map()
+
+    const buildPeople = () => payload.people.map((person, index) => {
         const rows = person.rows
         let running = openingOf(rows)
         let peak = 0
@@ -886,24 +895,26 @@ const start = (payload) => {
         }
     })
 
-    const events = []
-    people.forEach(person => {
-        person.list = person.rows.map((row, index) => ({
-            userId: person.key,
-            name: person.name,
-            username: person.username,
-            at: row[0],
-            delta: row[1],
-            balance: person.points[index].v,
-            shown: row[2],
-            reason: payload.reasons[row[3]],
-            label: readable(payload.reasons[row[3]]),
-            command: row[4] < 0 ? "" : payload.commands[row[4]],
-            recovered: row[5] === 1,
-        }))
-        person.list.forEach(event => events.push(event))
-    })
-    events.sort((a, b) => a.at - b.at || a.userId.localeCompare(b.userId))
+    const buildEvents = () => {
+        events = []
+        people.forEach(person => {
+            person.list = person.rows.map((row, index) => ({
+                userId: person.key,
+                name: person.name,
+                username: person.username,
+                at: row[0],
+                delta: row[1],
+                balance: person.points[index].v,
+                shown: row[2],
+                reason: payload.reasons[row[3]],
+                label: readable(payload.reasons[row[3]]),
+                command: row[4] < 0 ? "" : payload.commands[row[4]],
+                recovered: row[5] === 1,
+            }))
+            person.list.forEach(event => events.push(event))
+        })
+        events.sort((a, b) => a.at - b.at || a.userId.localeCompare(b.userId))
+    }
 
     const pairEscrows = () => {
         people.forEach(person => {
@@ -934,15 +945,8 @@ const start = (payload) => {
             held.forEach(waiting => waiting.forEach(open => { open.lost = true }))
         })
     }
-    pairEscrows()
-
     const lostKey = event => (event.command || event.reason.replace(/Escrow$/, "")) + "Lost"
     const lostLabel = event => readable(lostKey(event))
-    const liveFrom = events.reduce((first, event) =>
-        !event.recovered && (first === null || event.at < first) ? event.at : first, null)
-    const eraAt = events.some(event => event.recovered) ? liveFrom : null
-    const lostReasons = new Map()
-    events.forEach(event => { if (event.lost) lostReasons.set(event.reason, lostLabel(event)) })
 
     const seriesFor = (person, skipSettled, skipRecovered) => {
         let running = openingOf(person.rows)
@@ -984,16 +988,28 @@ const start = (payload) => {
         return {points: points, peak: peak, peakAt: peakAt, last: total}
     }
 
-    const serverTotals = aggregate(false, false)
-    const serverLine = {
-        id: "Server total",
-        points: serverTotals.points,
-        peak: serverTotals.peak,
-        peakAt: serverTotals.peakAt,
-        last: serverTotals.last,
-        from: serverTotals.points.length ? serverTotals.points[0].t : 0,
-        to: serverTotals.points.length ? serverTotals.points[serverTotals.points.length - 1].t : 0,
+    const buildModel = () => {
+        people = buildPeople()
+        buildEvents()
+        pairEscrows()
+        liveFrom = events.reduce((first, event) =>
+            !event.recovered && (first === null || event.at < first) ? event.at : first, null)
+        eraAt = events.some(event => event.recovered) ? liveFrom : null
+        lostReasons.clear()
+        events.forEach(event => { if (event.lost) lostReasons.set(event.reason, lostLabel(event)) })
+        serverTotals = aggregate(false, false)
+        serverLine = {
+            id: "Server total",
+            points: serverTotals.points,
+            peak: serverTotals.peak,
+            peakAt: serverTotals.peakAt,
+            last: serverTotals.last,
+            from: serverTotals.points.length ? serverTotals.points[0].t : 0,
+            to: serverTotals.points.length ? serverTotals.points[serverTotals.points.length - 1].t : 0,
+        }
     }
+
+    buildModel()
 
     const state = {
         mode: "top",
@@ -1865,22 +1881,27 @@ const start = (payload) => {
 
     const reasonsBox = document.getElementById("reasons")
     const reasonChips = new Map()
-    payload.reasons.slice().filter(reason => !UNCODED.has(reason))
-        .sort((a, b) => colourRank(colourKey(a)) - colourRank(colourKey(b))
-            || stageRank(a) - stageRank(b) || a.localeCompare(b))
-        .forEach(reason => {
-        const chip = document.createElement("span")
-        chip.className = "chip"
-        chip.textContent = labelFor(reason)
-        chip.onclick = () => {
-            if (state.reasons.has(reason)) state.reasons.delete(reason)
-            else state.reasons.add(reason)
+    const buildReasonChips = () => {
+        reasonChips.clear()
+        reasonsBox.innerHTML = ""
+        payload.reasons.slice().filter(reason => !UNCODED.has(reason))
+            .sort((a, b) => colourRank(colourKey(a)) - colourRank(colourKey(b))
+                || stageRank(a) - stageRank(b) || a.localeCompare(b))
+            .forEach(reason => {
+            const chip = document.createElement("span")
             chip.className = state.reasons.has(reason) ? "chip on" : "chip"
-            applyFilters()
-        }
-        reasonChips.set(reason, chip)
-        reasonsBox.appendChild(chip)
-    })
+            chip.textContent = labelFor(reason)
+            chip.onclick = () => {
+                if (state.reasons.has(reason)) state.reasons.delete(reason)
+                else state.reasons.add(reason)
+                chip.className = state.reasons.has(reason) ? "chip on" : "chip"
+                applyFilters()
+            }
+            reasonChips.set(reason, chip)
+            reasonsBox.appendChild(chip)
+        })
+    }
+    buildReasonChips()
 
     const refreshChips = () => {
         reasonChips.forEach((chip, reason) => {
@@ -3202,12 +3223,45 @@ const start = (payload) => {
         if (activeView !== "history") VIEW_DRAWERS[activeView]()
     })
 
-    refreshSortHeads()
-    drawMeta()
-    drawPeople()
-    drawStats()
-    drawChart()
-    applyFilters()
+    const renderAll = () => {
+        refreshSortHeads()
+        drawMeta()
+        drawPeople()
+        drawStats()
+        drawChart()
+        applyFilters()
+        if (activeView !== "history") drawActiveView()
+    }
+
+    const remapSelection = () => {
+        const byName = new Map(people.filter(person => person.username).map(person => [person.username, person]))
+        const found = person => person && person.username ? byName.get(person.username) || null : null
+
+        state.person = found(state.person)
+        state.chosen = new Set(Array.from(state.chosen).map(found).filter(Boolean))
+        state.anchor = found(state.anchor)
+        if (state.mode === "person" && state.person === null) state.mode = "top"
+        if (state.mode === "some" && state.chosen.size === 0) state.mode = "top"
+    }
+
+    applyPayload = next => {
+        payload = next
+        buildModel()
+        views.clear()
+        shownLists.clear()
+        periodSpans.clear()
+        luckTracks.clear()
+        economies.clear()
+        Object.keys(heldScales).forEach(key => { delete heldScales[key] })
+        heldScale = null
+        remapSelection()
+        buildReasonChips()
+        refreshChips()
+        renderAll()
+    }
+
+    renderAll()
+    refreshButton.disabled = false
 }
 
 const GATE_TITLES = {
@@ -3247,9 +3301,63 @@ const signIn = (token) => token === undefined
     : fetch(SESSION_ROUTE, {method: "POST", headers: {"Authorization": "Bearer " + token}})
         .then(response => response.ok ? undefined : refused(response))
 
+const FLASH_MS = 1600
+const THROTTLE_HOLD_S = 30
+
+let applyPayload = null
+let dataVersion = null
+
+const refreshButton = document.getElementById("refresh")
+let refreshing = false
+
+const settle = (label, holdSeconds) => {
+    refreshing = false
+    refreshButton.textContent = label
+    refreshButton.disabled = holdSeconds > 0
+    setTimeout(() => {
+        refreshButton.textContent = "Refresh"
+        refreshButton.disabled = false
+    }, Math.max(FLASH_MS, holdSeconds * 1000))
+}
+
+const refresh = () => {
+    if (refreshing) return
+    refreshing = true
+    refreshButton.disabled = true
+    refreshButton.textContent = "Checking"
+
+    fetch(POINT_HISTORY_ROUTE, dataVersion === null ? undefined : {headers: {"If-None-Match": dataVersion}})
+        .then(response => {
+            if (response.status === 304) {
+                settle("Up to date", 0)
+                return
+            }
+            if (!response.ok) return refused(response)
+
+            return response.json().then(payload => {
+                dataVersion = response.headers.get("ETag")
+                applyPayload(payload)
+                settle("Updated", 0)
+            })
+        })
+        .catch(error => {
+            if (error.status === 401) {
+                failed(error)
+                return
+            }
+            settle(error.status === 429 ? "Too many" : "Failed", error.status === 429 ? THROTTLE_HOLD_S : 0)
+        })
+}
+
+refreshButton.onclick = refresh
+
 signIn(linkToken())
     .then(() => fetch(POINT_HISTORY_ROUTE))
-    .then(response => response.ok ? response.json() : refused(response))
+    .then(response => {
+        if (!response.ok) return refused(response)
+        dataVersion = response.headers.get("ETag")
+        return response.json()
+    })
     .then(start)
     .catch(failed)
 </script>

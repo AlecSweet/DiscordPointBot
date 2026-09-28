@@ -4,6 +4,7 @@ import { join } from "path"
 import { gzipSync } from "zlib"
 import * as dotenv from "dotenv"
 import { clientAddress, retryAfter } from "./rateLimit"
+import { IServedHistory } from "./pointHistoryPayload"
 import { bearerToken, continued, cookieFor, redeem, sessionToken } from "./webSession"
 dotenv.config()
 
@@ -31,7 +32,7 @@ const PRIVATE_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 
-export type PointHistoryBody = () => Promise<string | undefined>
+export type PointHistoryBody = () => Promise<IServedHistory | undefined>
 
 export interface IWebServer {
     pointHistory: PointHistoryBody
@@ -135,22 +136,31 @@ const startWebServer = ({pointHistory, isMember}: IWebServer): Server => {
                 return
             }
 
-            const body = await pointHistory()
-            if (body === undefined) {
+            const served = await pointHistory()
+            if (served === undefined) {
                 send(response, 503, "text/plain", STILL_CONNECTING)
                 return
             }
 
             const renewal = {"Set-Cookie": cookieFor(session, overHttps(request))}
-            const wantsGzip = (request.headers["accept-encoding"] ?? "").toString().includes("gzip")
+            const etag = `"${served.version}"`
 
-            if (wantsGzip) {
-                const gzip = gzipped(body)
-                send(response, 200, "application/json", gzip, {...renewal, "Content-Encoding": "gzip", "Content-Length": gzip.length})
+            if (request.headers["if-none-match"] === etag) {
+                response.writeHead(304, {...PRIVATE_HEADERS, ...renewal, ETag: etag})
+                response.end()
                 return
             }
 
-            send(response, 200, "application/json", body, renewal)
+            const wantsGzip = (request.headers["accept-encoding"] ?? "").toString().includes("gzip")
+
+            if (wantsGzip) {
+                const gzip = gzipped(served.body)
+                send(response, 200, "application/json", gzip,
+                    {...renewal, ETag: etag, "Content-Encoding": "gzip", "Content-Length": gzip.length})
+                return
+            }
+
+            send(response, 200, "application/json", served.body, {...renewal, ETag: etag})
         } catch (err) {
             console.log(err)
             send(response, 500, "text/plain", "Internal Server Error")

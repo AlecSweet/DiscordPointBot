@@ -1140,8 +1140,8 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("each reason listed once", payload.reasons.join(","), "flip,accrual")
     eq("each command listed once", payload.commands.join(","), "flip")
     eq("each person holds their own rows", payload.people.map(person => person.rows.length).join(","), "2,1")
-    eq("a row is time, delta, balance, reason, command, recovered",
-        payload.people[0].rows[0].join(","), `${Date.parse("2024-01-01T00:00:00Z")},-10,90,0,0,0`)
+    eq("a row is time, delta, balance, reason, command, recovered, group",
+        payload.people[0].rows[0].join(","), `${Date.parse("2024-01-01T00:00:00Z")},-10,90,0,0,0,-1`)
     eq("rows stay oldest first within a person",
         payload.people[0].rows.map(row => row[1]).join(","), "-10,20")
     eq("an event with no command says so with -1", payload.people[1].rows[0][4], -1)
@@ -1152,21 +1152,62 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         `${payload.people[1].username}/${payload.people[1].nickname}`, "null/null")
 }},
 
+// One command writes every event of a transaction under its own message id, so the payload
+// groups by that. Only groups touching more than one person are indexed, which keeps the
+// column off the 26,000 flips that can never use it.
+{name: "a gift writes both sides under the one command message", fn: async () => {
+    await seed("111", {points: 500})
+    await seed("222", {points: 0})
+    const ctx = fakeContext("111")
+    await give.callback({message: ctx.message, args: ["<@222>", "200"], guild: guildWith("111", "222")})
+
+    const gift = await pointEventModel.find({reason: {$in: ["giftSent", "giftReceived"]}}).lean()
+    eq("both sides recorded", gift.length, 2)
+    eq("under the one message", gift[0].messageId, gift[1].messageId)
+    check("which is the command message", gift[0].messageId === "msg-111", `${gift[0].messageId}`)
+    check("the two sides are different people", gift[0].userId !== gift[1].userId,
+        `${gift[0].userId} / ${gift[1].userId}`)
+}},
+
+{name: "point history payload: only groups that cross people are given an index", fn: async () => {
+    await pointEventModel.collection.insertMany([
+        {userId: "111", seq: 1, delta: -200, balance: 300, reason: "giftSent", command: "give",
+            messageId: "msg-a", createdAt: new Date("2024-02-01T00:00:00Z")},
+        {userId: "222", seq: 1, delta: 200, balance: 200, reason: "giftReceived", command: "give",
+            messageId: "msg-a", createdAt: new Date("2024-02-01T00:00:01Z")},
+        {userId: "111", seq: 2, delta: -10, balance: 290, reason: "flip", command: "flip",
+            messageId: "msg-b", createdAt: new Date("2024-02-02T00:00:00Z")},
+        {userId: "111", seq: 3, delta: 10, balance: 300, reason: "flip", command: "flip",
+            messageId: "msg-b", createdAt: new Date("2024-02-02T00:00:01Z")},
+        {userId: "111", seq: 4, delta: 5, balance: 305, reason: "accrual",
+            createdAt: new Date("2024-02-03T00:00:00Z")},
+    ])
+
+    const guild = asGuild(guildWith("111", "222"))
+    const payload = buildPointHistoryPayload(await allPointEvents(), await memberNames(guild))
+    const groupOf = (person: number, row: number) => payload.people[person].rows[row][6]
+
+    check("the two sides of the gift share an index", groupOf(0, 0) === groupOf(1, 0) && groupOf(0, 0) !== -1,
+        `${groupOf(0, 0)} / ${groupOf(1, 0)}`)
+    eq("a flip run held by one person is not indexed", `${groupOf(0, 1)},${groupOf(0, 2)}`, "-1,-1")
+    eq("an event with no group at all says -1", groupOf(0, 3), -1)
+}},
+
 {name: "point history payload: the served body is rebuilt once a new event lands", fn: async () => {
     await seed("111", {points: 1000})
     const guild = asGuild(guildWith("111"))
 
     const at = Date.now()
-    const before = await pointHistoryBody(guild, at)
+    const before = (await pointHistoryBody(guild, at)).body
     eq("served as json", JSON.parse(before).people.length, 0)
-    check("the same body is handed out again", await pointHistoryBody(guild, at) === before)
+    check("the same body is handed out again", (await pointHistoryBody(guild, at)).body === before)
 
     rollSequence(0)
     await flip.callback({message: fakeContext("111").message, args: ["25"], guild: guildWith("111")})
 
-    check("a rebuild waits out the throttle", await pointHistoryBody(guild, at + 5000) === before)
+    check("a rebuild waits out the throttle", (await pointHistoryBody(guild, at + 5000)).body === before)
 
-    const after = JSON.parse(await pointHistoryBody(guild, at + 11000))
+    const after = JSON.parse((await pointHistoryBody(guild, at + 11000)).body)
     eq("the new flip is in the rebuilt body", after.people[0].rows.length, 1)
     eq("under the member's name", after.people[0].nickname, "nick111")
 }},
@@ -1193,19 +1234,19 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const member = raw.members.cache.get("111")
 
     const at = Date.now()
-    const before = JSON.parse(await pointHistoryBody(guild, at))
+    const before = JSON.parse((await pointHistoryBody(guild, at)).body)
     eq("named as they were", `${before.people.length}`, "0")
 
     await pointEventModel.collection.insertOne({userId: "111", seq: 1, delta: -10, balance: 990,
         reason: "flip", command: "flip", createdAt: new Date()})
     clearPointEvents()
 
-    const named = JSON.parse(await pointHistoryBody(guild, at + 11000))
+    const named = JSON.parse((await pointHistoryBody(guild, at + 11000)).body)
     eq("the nickname is served", named.people[0].nickname, "nick111")
     eq("so is the username behind it", named.people[0].username, "name111")
 
     if (member !== undefined) member.user.username = "renamed111"
-    const renamed = JSON.parse(await pointHistoryBody(guild, at + 22000))
+    const renamed = JSON.parse((await pointHistoryBody(guild, at + 22000)).body)
     eq("the new username is served, not the cached one", renamed.people[0].username, "renamed111")
 }},
 

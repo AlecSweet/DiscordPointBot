@@ -23,7 +23,10 @@ const main = () => {
     const snapshot = readFileSync(inPath, "utf8")
     JSON.parse(snapshot)
 
-    startWebServer({pointHistory: () => Promise.resolve(snapshot), isMember: () => Promise.resolve(true)})
+    startWebServer({
+        pointHistory: () => Promise.resolve({body: snapshot, version: "snapshot"}),
+        isMember: () => Promise.resolve(true),
+    })
     console.log(`serving ${inPath}, open ${mintLink("local")}`)
 }
 
