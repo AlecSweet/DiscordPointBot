@@ -1,7 +1,7 @@
 import { MongoMemoryServer } from "mongodb-memory-server"
 import mongoose from "mongoose"
 import userModel from "../db/user"
-import pointEventModel, { allPointEvents, clearPointEvents, IPointChange } from "../db/pointEvent"
+import pointEventModel, { allPointEvents, clearPointEvents, IPointChange, IPointEvent, recordPointEvent } from "../db/pointEvent"
 import { settleUser, startUserActivity, disableUserActivity, updateUser, inc, set } from "../util/userUtil"
 import { updateUserWin, updateUserLoss } from "../util/flipUtil"
 import { claimDaily, claimWeekly, claimMonthly, claimYearly, claimByName, claimNames, isClaimName } from "../util/claimUtil"
@@ -18,7 +18,10 @@ import { counterMismatches, openingBalances, seedOpeningBalances, takeSnapshot }
 import { eventLine, invalidEvents, loadOpenings, replaceBackfill } from "../scripts/backfillPointEvents"
 import { pendingRenames, renameMartingale } from "../scripts/renameMartingaleEvents"
 import { parsePoints, parseCount } from "../util/args"
-import { Message } from "discord.js"
+import { Guild, Message, VoiceState } from "discord.js"
+import moment from "moment-timezone"
+import handleVoiceActivity, { checkInactivity } from "../events/handleVoiceActivity"
+import guildModel, { addActiveChannel, getCurrentGuildInfo, updateCurrentGuildInfo } from "../db/guildInfo"
 
 const MINUTE = 60000
 const FLIP: IPointChange = {reason: "flip", command: "flip"}
@@ -312,6 +315,18 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("wait reply", msg.replies[0].includes("Wait until"), msg.replies[0])
 }},
 
+{name: "claimDaily: the day turns over at Chicago midnight, not UTC midnight", fn: async () => {
+    const chicagoMidnight = moment.tz("America/Chicago").startOf("day").toDate().getTime()
+
+    await seed("tzBefore", {pointsClaimed: 0, dailyClaim: new Date(chicagoMidnight - 1000)})
+    await claimDaily(await settleUser("tzBefore"), fakeMessage().message, CLAIM)
+    eq("a claim from the second before it belongs to the day before", (await settleUser("tzBefore")).pointsClaimed, 30)
+
+    await seed("tzAfter", {pointsClaimed: 0, dailyClaim: new Date(chicagoMidnight + 1000)})
+    await claimDaily(await settleUser("tzAfter"), fakeMessage().message, CLAIM)
+    eq("a claim from the second after it is today's", (await settleUser("tzAfter")).pointsClaimed, 0)
+}},
+
 {name: "claimDaily: a claim from two days ago is allowed again", fn: async () => {
     await seed("claim3", {pointsClaimed: 0, dailyClaim: new Date(Date.now() - 2 * 24 * 60 * MINUTE)})
     const msg = fakeMessage()
@@ -585,6 +600,14 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("no reply sent", msg.replies.length, 0)
 }},
 
+{name: "parseCount: \"max\" takes the command's cap", fn: async () => {
+    const msg = fakeMessage()
+
+    eq("\"max\" parses to the cap", await parseCount("MaX", 25, msg.message, "number of flips"), 25)
+    eq("a different cap is honoured", await parseCount("max", 50, msg.message, "number of wins"), 50)
+    eq("no reply sent", msg.replies.length, 0)
+}},
+
 {name: "parseCount: nonsense and over-cap counts are refused", fn: async () => {
     const nonsense = fakeMessage()
     eq("\"lots\" rejected", await parseCount("lots", 25, nonsense.message, "number of flips"), undefined)
@@ -702,6 +725,34 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     } catch (e) {
         check("rejected as a duplicate", (e as {code?: number}).code === 11000, (e as Error).message)
     }
+}},
+
+{name: "ledger: a repeated write of the same event is not a duplicate, a different event on the same seq is refused", fn: async () => {
+    await pointEventModel.init()
+    await seed("collide", {points: 100})
+    await updateUser("collide", {points: inc(10)}, RECEIVED)
+    const user = await settleUser("collide")
+
+    clearPointEvents()
+    const before = (await allPointEvents()).length
+
+    const said: string[] = []
+    const log = console.log
+    console.log = (...parts: unknown[]) => { said.push(parts.map(String).join(" ")) }
+    let quiet = -1
+    try {
+        await recordPointEvent(user, 10, RECEIVED)
+        quiet = said.length
+        await recordPointEvent(user, 25, FLIP)
+    } finally {
+        console.log = log
+    }
+
+    eq("writing the same event again lands quietly", quiet, 0)
+    eq("only ever one row for that seq", await pointEventModel.countDocuments({userId: "collide"}), 1)
+    eq("and the ledger remembers it once", (await allPointEvents()).length, before)
+    check("a different event on that seq is reported, not passed off as written",
+        said.some(line => line.startsWith("ALERT") && line.includes("collide")), said.join(" | "))
 }},
 
 {name: "ledger: a reason outside the list is rejected", fn: async () => {
@@ -824,6 +875,215 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     eq("the read that could not reach mongo fails", refused, true)
     eq("the read after it loads the ledger rather than failing forever", (await allPointEvents()).length, 1)
+}},
+
+{name: "ledger: a load that fails while an event is being remembered still lets the points write finish", fn: async () => {
+    await seed("ledgerWarm", {points: 100})
+
+    let failLoad: (err: Error) => void = () => undefined
+    const find = pointEventModel.find
+    pointEventModel.find = (() => ({lean: () => new Promise((_resolve, reject) => { failLoad = reject })})
+        ) as unknown as typeof pointEventModel.find
+
+    const create = pointEventModel.create.bind(pointEventModel)
+    pointEventModel.create = (async (doc: IPointEvent) => {
+        const made = await create(doc)
+        setTimeout(() => failLoad(new Error("no connection")), 0)
+        return made
+    }) as unknown as typeof pointEventModel.create
+
+    const said: string[] = []
+    const log = console.log
+    console.log = (...parts: unknown[]) => { said.push(parts.map(String).join(" ")) }
+
+    clearPointEvents()
+    const warming = allPointEvents().catch(() => undefined)
+    try {
+        await updateUser("ledgerWarm", {points: inc(10)}, RECEIVED)
+    } finally {
+        console.log = log
+        pointEventModel.find = find
+        pointEventModel.create = create as unknown as typeof pointEventModel.create
+        await warming
+        clearPointEvents()
+    }
+
+    eq("the points still went through", (await settleUser("ledgerWarm")).points, 110)
+    eq("and the event reached the ledger", await pointEventModel.countDocuments({userId: "ledgerWarm"}), 1)
+    check("the failed load was logged rather than thrown at whoever moved the points",
+        said.some(line => line.includes("no connection")), said.join(" | "))
+}},
+
+{name: "voice: with no guild info stored, an open session is left open rather than closed", fn: async () => {
+    await seed("noGuild", {points: 0})
+    await startUserActivity("noGuild")
+
+    await handleVoiceActivity({} as VoiceState,
+        {id: "noGuild", deaf: false, serverMute: false, channel: null} as unknown as VoiceState)
+
+    check("the session is still running", (await settleUser("noGuild")).activeStartDate !== null)
+}},
+
+{name: "voice: the inactivity sweep starts no new work once shutdown has begun", fn: async () => {
+    await updateCurrentGuildInfo([], "")
+    await seed("sweepFirst", {activeStartDate: new Date(Date.now() - 5 * MINUTE)})
+    await seed("sweepSecond", {activeStartDate: new Date(Date.now() - 5 * MINUTE)})
+
+    const fetched: string[] = []
+    const guild = {members: {fetch: async (id: string) => {
+        fetched.push(id)
+        setShuttingDown(true)
+        return {voice: {id: id, deaf: false, serverMute: false, channel: null}}
+    }}}
+
+    try {
+        await checkInactivity(guild as unknown as Guild)
+    } finally {
+        setShuttingDown(false)
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+
+    eq("it stopped rather than walking the rest", fetched.length, 1)
+    check("the member it was already on was still settled",
+        (await settleUser(fetched[0])).activeStartDate === null)
+    check("the one it skipped keeps its session for the next sweep",
+        (await settleUser(fetched[0] === "sweepFirst" ? "sweepSecond" : "sweepFirst")).activeStartDate !== null)
+}},
+
+{name: "guild info: only one document can ever describe the guild", fn: async () => {
+    await guildModel.init()
+    try {
+        const indexes = await guildModel.collection.indexes()
+        check("the id is unique", indexes.some(index => index.key?.id === 1 && index.unique === true),
+            JSON.stringify(indexes.map(index => ({key: index.key, unique: index.unique}))))
+
+        await updateCurrentGuildInfo([], "")
+        const refused = await guildModel.collection
+            .insertOne({id: `${process.env.GUILD_ID}`, activeChannelIds: [], afkChannelId: ""})
+            .then(() => false).catch(() => true)
+        eq("so nothing can add a second alongside it", refused, true)
+    } finally {
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+}},
+
+{name: "guild info: a writer that loses the insert race retries onto the winner's document", fn: async () => {
+    await guildModel.init()
+    await updateCurrentGuildInfo(["theWinner"], "afkWinner")
+
+    const findOneAndUpdate = guildModel.findOneAndUpdate.bind(guildModel)
+    let calls = 0
+    const losingOnce = (...args: unknown[]) => {
+        calls++
+        if (calls === 1) return Promise.reject(Object.assign(new Error("E11000 duplicate key"), {code: 11000}))
+        return (findOneAndUpdate as unknown as (...a: unknown[]) => unknown)(...args)
+    }
+    guildModel.findOneAndUpdate = losingOnce as unknown as typeof guildModel.findOneAndUpdate
+
+    try {
+        await updateCurrentGuildInfo(["theLoser"], "afkLoser")
+    } finally {
+        guildModel.findOneAndUpdate = findOneAndUpdate as unknown as typeof guildModel.findOneAndUpdate
+    }
+
+    try {
+        eq("it went again after losing", calls, 2)
+        eq("and left one document, not two", await guildModel.countDocuments({}), 1)
+        const stored = await getCurrentGuildInfo()
+        check("holding the write it was retrying",
+            stored !== null && stored.activeChannelIds.join() === "theLoser" && stored.afkChannelId === "afkLoser",
+            JSON.stringify(stored))
+    } finally {
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+}},
+
+{name: "guild info: two channels made at once are both tracked", fn: async () => {
+    await updateCurrentGuildInfo(["alreadyThere"], "afk")
+
+    try {
+        await Promise.all([addActiveChannel("madeFirst"), addActiveChannel("madeSecond")])
+
+        const stored = await getCurrentGuildInfo()
+        check("neither write was lost to the other",
+            stored !== null && ["alreadyThere", "madeFirst", "madeSecond"]
+                .every(id => stored.activeChannelIds.includes(id)),
+            JSON.stringify(stored))
+        eq("and the afk channel nobody was writing is untouched", (await getCurrentGuildInfo())?.afkChannelId, "afk")
+    } finally {
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+}},
+
+{name: "guild info: the same channel arriving twice is only listed once", fn: async () => {
+    await updateCurrentGuildInfo([], "afk")
+
+    try {
+        await addActiveChannel("saidTwice")
+        await addActiveChannel("saidTwice")
+
+        eq("it is in there once", (await getCurrentGuildInfo())?.activeChannelIds.join(), "saidTwice")
+    } finally {
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+}},
+
+{name: "guild info: a channel made before the guild is on record is not passed off as tracked", fn: async () => {
+    await mongoose.connection.collection("guilds").deleteMany({})
+
+    const said: string[] = []
+    const log = console.log
+    console.log = (...parts: unknown[]) => { said.push(parts.map(String).join(" ")) }
+
+    let tracked = true
+    try {
+        tracked = await addActiveChannel("tooEarly")
+    } finally {
+        console.log = log
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+
+    eq("a write that matched nothing is not a write", tracked, false)
+    eq("no half document was made for it", await guildModel.countDocuments({}), 0)
+    eq("so there is still no guild info to read", await getCurrentGuildInfo(), null)
+    check("and it says the channel earns nothing",
+        said.some(line => line.startsWith("ALERT") && line.includes("tooEarly")), said.join(" | "))
+}},
+
+{name: "guild info: a channel that never gets recorded is reported rather than passed off as tracked", fn: async () => {
+    await updateCurrentGuildInfo([], "afk")
+
+    const said: string[] = []
+    const log = console.log
+    console.log = (...parts: unknown[]) => { said.push(parts.map(String).join(" ")) }
+
+    const updateOne = guildModel.updateOne
+    guildModel.updateOne = (() =>
+        Promise.reject(new Error("no connection"))) as unknown as typeof guildModel.updateOne
+
+    let tracked = true
+    try {
+        tracked = await addActiveChannel("neverLands")
+    } finally {
+        guildModel.updateOne = updateOne
+        console.log = log
+        await mongoose.connection.collection("guilds").deleteMany({})
+    }
+
+    eq("the caller is told it did not go through", tracked, false)
+    check("and it says what that costs",
+        said.some(line => line.startsWith("ALERT") && line.includes("neverLands")), said.join(" | "))
+}},
+
+{name: "guild info: a write that fails for any other reason is not passed off as done", fn: async () => {
+    const findOneAndUpdate = guildModel.findOneAndUpdate.bind(guildModel)
+    guildModel.findOneAndUpdate = (() =>
+        Promise.reject(new Error("no connection"))) as unknown as typeof guildModel.findOneAndUpdate
+
+    const raised = await updateCurrentGuildInfo([], "").then(() => "").catch((err: Error) => err.message)
+    guildModel.findOneAndUpdate = findOneAndUpdate as unknown as typeof guildModel.findOneAndUpdate
+
+    eq("it reaches the caller", raised, "no connection")
 }},
 
 {name: "ledger: each user's changes are uniquely numbered by an index", fn: async () => {

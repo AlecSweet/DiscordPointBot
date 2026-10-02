@@ -1,5 +1,7 @@
 import { Schema, model, models, Model } from "mongoose";
 import { IUser } from "./user";
+import retryWrite from "./retryWrite";
+import isDuplicateKeyError from "./duplicateKey";
 
 export const POINT_REASONS = [
     "openingBalance", "newUser", "accrual",
@@ -104,6 +106,23 @@ const rememberPointEvent = async (event: IPointEvent): Promise<void> => {
     if (!alreadyLoaded(events, event)) events.push(event)
 }
 
+const LEDGER_GAP = "the balance moved with no event to show it"
+
+const sameEvent = (stored: Pick<IPointEvent, "delta" | "balance" | "reason">, event: IPointEvent): boolean =>
+    stored.delta === event.delta && stored.balance === event.balance && stored.reason === event.reason
+
+const writePointEvent = async (event: IPointEvent): Promise<void> => {
+    await pointEventModel.create(event).catch(async (err) => {
+        if (!isDuplicateKeyError(err)) throw err
+
+        const stored = await pointEventModel.findOne({userId: event.userId, seq: event.seq}).lean()
+        if (!stored) throw err
+        if (!sameEvent(stored, event)) {
+            throw new Error(`seq ${event.seq} for ${event.userId} already holds a ${stored.reason} of ${stored.delta}`)
+        }
+    })
+}
+
 export const recordPointEvent = async (user: Pick<IUser, "id" | "points" | "pointsSeq">, delta: number, change: IPointChange): Promise<void> => {
     if (!delta) return
 
@@ -118,7 +137,7 @@ export const recordPointEvent = async (user: Pick<IUser, "id" | "points" | "poin
         createdAt: new Date(),
     }
 
-    await pointEventModel.create(event)
-        .then(() => rememberPointEvent(event))
-        .catch((err) => console.log(err))
+    const wrote = await retryWrite(() => writePointEvent(event),
+        `recording the ${change.reason} event for ${user.id}`, LEDGER_GAP)
+    if (wrote) await rememberPointEvent(event).catch((err) => console.log(err))
 }

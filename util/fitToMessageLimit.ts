@@ -1,5 +1,16 @@
 export const MAX_MESSAGE_LENGTH = 2000
 
+const ESC = String.fromCharCode(27)
+
+const startOfKeptText = (text: string, room: number): number => {
+    const ansi = new RegExp(ESC + '\\[[0-9;]*m', 'g')
+    let at = text.length - room
+    for (let found = ansi.exec(text); found !== null; found = ansi.exec(text)) {
+        if (found.index < at && at < found.index + found[0].length) at = found.index + found[0].length
+    }
+    return at
+}
+
 const fitToMessageLimit = (build: (addon: string) => string, addon: string): string => {
     const content = build(addon)
     if (content.length <= MAX_MESSAGE_LENGTH) {
@@ -17,7 +28,7 @@ const fitToMessageLimit = (build: (addon: string) => string, addon: string): str
     }
 
     const trimmed = lines.join('\n')
-    return build(trimmed.length > room ? trimmed.slice(trimmed.length - room) : trimmed)
+    return build(trimmed.length > room ? trimmed.slice(startOfKeptText(trimmed, room)) : trimmed)
 }
 
 export default fitToMessageLimit

@@ -1,9 +1,10 @@
 import { Client, Guild, Intents } from "discord.js";
 import WOKCommands from "wokcommands";
+import mongoose from "mongoose";
 import path from "path";
 import handleVoiceActivity, { checkInactivity } from "./events/handleVoiceActivity";
 import * as dotenv from "dotenv"
-import { getCurrentGuildInfo, updateCurrentGuildInfo } from "./db/guildInfo";
+import { addActiveChannel, updateCurrentGuildInfo } from "./db/guildInfo";
 import { CronJob } from 'cron';
 import { addUserMutex } from "./util/userMutexes";
 import { checkAndCancelMaroonedChallenges } from "./util/challengeUtil";
@@ -66,8 +67,10 @@ process.on('SIGINT', onSignal)
 
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user?.tag}!`);
+    await mongoose.connect(`${process.env.MONGO_URI}`)
+        .catch((err) => { console.log(err); process.exit(1) })
     await client.guilds.fetch(`${process.env.GUILD_ID}`)
-        .then((guild) => {
+        .then(async (guild) => {
             currentGuild = guild
             const activeChannelIds = guild.channels.cache.filter(channel => {
                     return channel.type === 'GUILD_VOICE' && channel.id !== channel.guild.afkChannelId
@@ -75,7 +78,7 @@ client.on('ready', async () => {
                     return channel.id
                 })
             const afkChannelId = guild.afkChannelId ? guild.afkChannelId : ''
-            updateCurrentGuildInfo(activeChannelIds, afkChannelId)
+            await updateCurrentGuildInfo(activeChannelIds, afkChannelId)
             guild.members.cache.map(member => {
                 addUserMutex(member.user.id)
             })
@@ -107,9 +110,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
 client.on('channelCreate', async (channel) => {
     if (channel.type === 'GUILD_VOICE' && channel.guild.afkChannelId !== channel.id) {
-        const guildInfo = await getCurrentGuildInfo()
-        guildInfo.activeChannelIds.push(channel.id)
-        updateCurrentGuildInfo(guildInfo.activeChannelIds, guildInfo.afkChannelId)
+        await addActiveChannel(channel.id)
     }
 })
 

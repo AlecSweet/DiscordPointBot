@@ -62,8 +62,16 @@ export const parsePoints = async (arg: string, user: IUser, message: Message<boo
     return points
 }
 
+const countFor = (arg: string, max: number): number => {
+    switch (arg.toUpperCase()) {
+        case 'SOME': return random(1, max)
+        case 'MAX': return max
+        default: return Number(arg)
+    }
+}
+
 export const parseCount = async (arg: string, max: number, message: Message<boolean>, noun: string): Promise<number | undefined> => {
-    const count = arg.toUpperCase() === 'SOME' ? random(1, max) : Number(arg)
+    const count = countFor(arg, max)
 
     if (!isValidNumberArg(count)) {
         await message.reply({content: `${arg} ain a valid ${noun} ${process.env.NOPPERS_EMOJI}`})

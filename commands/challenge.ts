@@ -52,10 +52,19 @@ const challenge = textCommand({
                 return undefined
             }
 
-            await whileSettling(async () => {
-                await insertChallenge({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
+            const opened = await whileSettling(async () => {
+                const inserted = await insertChallenge({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
+                if (!inserted) return false
+
                 await updateUser(user.id, {points: inc(-cPoints)}, {...ctx.origin, reason: "challengeEscrow"})
+                return true
             })
+
+            if (!opened) {
+                await message.reply({content: `Couldn't open the challenge ${process.env.NOPPERS_EMOJI}`})
+                return undefined
+            }
+
             return cPoints
         })
 
@@ -102,6 +111,11 @@ const challenge = textCommand({
 
                     const challenge = await getChallenge(message.author.id)
 
+                    if (challenge === null) {
+                        i.reply({content: `Challenge is gone ${process.env.NOPPERS_EMOJI}`})
+                        return
+                    }
+
                     if (challenge.acceptId && await isValidUserArg(challenge.acceptId, guild)) {
                         i.reply({content: `Challenge accepted already, too slow ${process.env.NOPPERS_EMOJI}`})
                         return
@@ -122,15 +136,30 @@ const challenge = textCommand({
                                 challengePoints :
                                 targetUser.points
 
-                        await whileSettling(async () => {
-                            if(acceptBet < challengePoints){
-                                await updateUser(ctx.authorId, {points: inc(challengePoints - acceptBet)}, {...ctx.origin, reason: "challengeRefund"})
-                                await updateChallenge(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
-                            } else {
-                                await updateChallenge(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
+                        const unstaked = challengePoints - acceptBet
+
+                        const joined = await whileSettling(async () => {
+                            if (unstaked) {
+                                await updateUser(ctx.authorId, {points: inc(unstaked)}, {...ctx.origin, reason: "challengeRefund"})
                             }
+
+                            const recorded = await updateChallenge(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
+                            if (!recorded) {
+                                if (unstaked) {
+                                    await updateUser(ctx.authorId, {points: inc(-unstaked)}, {...ctx.origin, reason: "challengeEscrow"})
+                                }
+                                return false
+                            }
+
                             await updateUser(targetUser.id, {points: inc(-acceptBet)}, {...ctx.origin, reason: "challengeEscrow"})
+                            return true
                         })
+
+                        if (!joined) {
+                            await i.reply({content: `Couldn't accept the challenge ${process.env.NOPPERS_EMOJI}`})
+                            return undefined
+                        }
+
                         return {targetUser: targetUser, acceptBet: acceptBet}
                     })
 

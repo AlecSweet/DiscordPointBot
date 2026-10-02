@@ -1,4 +1,4 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, models, Model } from "mongoose";
 import retryWrite from "./retryWrite";
 import * as dotenv from "dotenv"
 dotenv.config()
@@ -40,30 +40,27 @@ const warSchema = new Schema({
     },
     startDate: {
         type: Date,
-        default: new Date(),
+        default: Date.now,
         required: true
     }
 });
 
-const warModel = model['war'] || model('war', warSchema);
+const warModel: Model<IwarRet> = models.war || model<IwarRet>('war', warSchema);
 
 export default warModel
 
-export const getWar = async (ownerId: string): Promise<IwarRet> => {
-    return await warModel.findOne({ownerId}).catch(err => {console.log(err)})
-}
+export const getWar = async (ownerId: string): Promise<IwarRet | null> =>
+    await warModel.findOne({ownerId: ownerId}).catch((err) => { console.log(err); return null })
 
-export const updateWar = async (ownerId: string, warUpdates: Iwar) => {
-    await warModel.findOneAndUpdate({ownerId}, {$set: {...(warUpdates)}}).catch(err => {console.log(err)})
-}
+export const updateWar = async (ownerId: string, warUpdates: Iwar): Promise<boolean> =>
+    await warModel.findOneAndUpdate({ownerId: ownerId}, {$set: {...(warUpdates)}})
+        .then((updated) => updated !== null)
+        .catch((err) => { console.log(err); return false })
 
-export const incWar= async (ownerId: string, warUpdates: Iwar) => {
-    await warModel.findOneAndUpdate({ownerId}, {$inc: {...(warUpdates)}}).catch(err => {console.log(err)})
-}
-
-export const insertWar = async (war: Iwar) => {
-    await new warModel({...(war)}).save().catch(err => {console.log(err)})
-}
+export const insertWar = async (war: Iwar): Promise<boolean> =>
+    await new warModel({...(war)}).save()
+        .then(() => true)
+        .catch((err) => { console.log(err); return false })
 
 export const deleteWar = async (ownerId: string): Promise<boolean> =>
-    await retryWrite(() => warModel.deleteOne({ownerId}), `deleting the war for ${ownerId}`)
+    await retryWrite(() => warModel.deleteOne({ownerId: ownerId}), `deleting the war for ${ownerId}`)

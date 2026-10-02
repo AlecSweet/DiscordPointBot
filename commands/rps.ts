@@ -50,10 +50,19 @@ const rps = textCommand({
                 return undefined
             }
 
-            await whileSettling(async () => {
-                await insertRps({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
+            const opened = await whileSettling(async () => {
+                const inserted = await insertRps({ownerId: user.id, ownerBet: cPoints, startDate: new Date()})
+                if (!inserted) return false
+
                 await updateUser(user.id, {points: inc(-cPoints)}, {...ctx.origin, reason: "rpsEscrow"})
+                return true
             })
+
+            if (!opened) {
+                await message.reply({content: `Couldn't open the game ${process.env.NOPPERS_EMOJI}`})
+                return undefined
+            }
+
             return cPoints
         })
 
@@ -139,15 +148,30 @@ const rps = textCommand({
                                     rpsPoints :
                                     targetUser.points
 
-                            await whileSettling(async () => {
-                                if(acceptBet < rpsPoints){
-                                    await updateUser(ctx.authorId, {points: inc(rpsPoints - acceptBet)}, {...ctx.origin, reason: "rpsRefund"})
-                                    await updateRps(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
-                                } else {
-                                    await updateRps(ctx.authorId, {acceptId: targetUser.id, acceptBet: acceptBet})
+                            const unstaked = rpsPoints - acceptBet
+
+                            const joined = await whileSettling(async () => {
+                                if (unstaked) {
+                                    await updateUser(ctx.authorId, {points: inc(unstaked)}, {...ctx.origin, reason: "rpsRefund"})
                                 }
+
+                                const recorded = await updateRps(ctx.authorId, {ownerBet: acceptBet, acceptId: targetUser.id, acceptBet: acceptBet})
+                                if (!recorded) {
+                                    if (unstaked) {
+                                        await updateUser(ctx.authorId, {points: inc(-unstaked)}, {...ctx.origin, reason: "rpsEscrow"})
+                                    }
+                                    return false
+                                }
+
                                 await updateUser(targetUser.id, {points: inc(-acceptBet)}, {...ctx.origin, reason: "rpsEscrow"})
+                                return true
                             })
+
+                            if (!joined) {
+                                await i.reply({content: `Couldn't accept the game ${process.env.NOPPERS_EMOJI}`})
+                                return undefined
+                            }
+
                             return {targetUser: targetUser, acceptBet: acceptBet}
                         })
 
@@ -191,6 +215,8 @@ const rps = textCommand({
                 }
             } else {
                 const rps = await getRps(ctx.authorId)
+                if (rps === null) return
+
                 await rpsMessage.edit( { content: `${gameStarting}Rock` })
                 setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper` } )}, 1000),
                 setTimeout(async () => { await rpsMessage.edit( { content: `${gameStarting}Rock, Paper, Scissors` })}, 2000),

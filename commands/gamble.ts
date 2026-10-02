@@ -7,6 +7,7 @@ import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/fli
 import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import formatNet from "../util/formatNet";
+import { dimSeparators } from "../util/ansi";
 import formatPoints from "../util/formatPoints";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
@@ -34,7 +35,7 @@ const flip = textCommand({
     aliases: ['f','filp','fipl','lipf','pilf','fpil', 'phillip', 'fip', 'ipfl', 'iflp'],
     category: 'gambling',
     description: 'lose some points',
-    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all", "some" or "min"> <Optional # of times to flip (max 50) or "some">',
+    expectedArgs: '<# of points to lose (min 2% of your points past one flip), "all", "some" or "min"> <Optional # of times to flip (max 50), "some" or "max">',
     minArgs: 1,
     maxArgs: 2,
     cooldown: '3s',
@@ -71,7 +72,7 @@ const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number,
     const wins = results.filter(result => result.won).length
     const losses = results.length - wins
 
-    const header = `Points: ${formatPoints(user.points)} (${formatNet(net)})   Flip: ${results.length}/${maxFlips} (${wins}-${losses})   Bet: ${formatPoints(bet)}`
+    const header = `Points: ${dimSeparators(formatPoints(user.points))} (${formatNet(net)})   Flip: ${results.length}/${maxFlips} (${wins}-${losses})   Bet: ${dimSeparators(formatPoints(bet))}`
 
     const build = (body: string) =>
 `**<@${user.id}>'s Flips**
@@ -92,7 +93,7 @@ const renderFlips = (results: IFlipResult[], from: number): string => {
 }
 
 const formatRecord = (results: IFlipResult[]): string =>
-    renderFlips(results.slice(-LINES), Math.max(0, results.length - LINES))
+    dimSeparators(renderFlips(results.slice(-LINES), Math.max(0, results.length - LINES)))
 
 
 const getNetLine = (net: number): string => {
@@ -184,9 +185,9 @@ const flipOnce = async (guild: Guild, user: IUser, points: number, message: Mess
     }
 
     const rollFormatted = roll + 1
-    const react = (emoji: string) => { message.react(emoji).catch((err) => console.log(err)) }
+    const react = (emoji: string) => message.react(emoji).catch((err) => console.log(err))
 
-    react('3️⃣')
+    await react('3️⃣')
     setTimeout(() => { react('2️⃣') }, TICK_MS)
     setTimeout(() => { react('1️⃣') }, 2 * TICK_MS)
     setTimeout(() => { react(won ? '✅' : '❌') }, 3 * TICK_MS)
