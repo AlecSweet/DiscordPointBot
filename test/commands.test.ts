@@ -10,6 +10,8 @@ import { addUserMutex, userMutexes } from "../util/userMutexes"
 import getNamedPointEvents, { displayName, memberNames } from "../util/namedPointEvents"
 import pointHistoryBody, { buildPointHistoryPayload, clearPointHistoryBody } from "../web/pointHistoryPayload"
 import isGuildMember from "../util/guildMembership"
+import sleep from "../util/sleep"
+import { settled } from "../util/settling"
 
 const MINUTE = 60000
 const DISCORD_MESSAGE_LIMIT = 2000
@@ -146,6 +148,7 @@ interface IFakeInteractionPayload {
 interface IFakeInteraction {
     user: {id: string}
     customId: string
+    reply: (payload: {content: string}) => Promise<void>
     deferReply: (options: {ephemeral?: boolean}) => Promise<void>
     editReply: (payload: IFakePayload) => Promise<void>
 }
@@ -201,12 +204,13 @@ const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
         message: message,
         files: () => files,
         attached: () => files.map(file => file.attachment.toString()).join("\n"),
-        press: async (userId: string) => {
+        press: async (userId: string, customId = "show") => {
             if (!collect) throw new Error("nothing to press")
             let ephemeral = false
             await collect({
                 user: {id: userId},
-                customId: "show",
+                customId: customId,
+                reply: async (payload: {content: string}) => { replies.push(payload.content); record(payload.content) },
                 deferReply: async (options: {ephemeral?: boolean}) => { ephemeral = options.ephemeral === true },
                 editReply: async (payload: IFakePayload) => {
                     privateReplies.push({content: payload.content ?? "", ephemeral: ephemeral})
@@ -223,8 +227,20 @@ const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
     }
 }
 
+const ESC = String.fromCharCode(27)
+const uncolored = (text: string): string =>
+    text.split(ESC).map((part, index) => index === 0 ? part : part.slice(part.indexOf("m") + 1)).join("")
+
 const numberedLines = (panel: string): number =>
     panel.split("\n").filter(line => /^ *[0-9]+\) /.test(line)).length
+
+const resolves = async (condition: () => Promise<boolean>, what: string): Promise<void> => {
+    for (let waited = 0; waited < 5000; waited += 5) {
+        if (await condition()) return
+        await sleep(5)
+    }
+    throw new Error(`timed out waiting for ${what}`)
+}
 
 const pressButton = async (ctx: ReturnType<typeof fakeContext>, userId = "111"): Promise<string> => {
     await ctx.press(userId)
@@ -389,9 +405,10 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
     const panel = written[written.length - 1]
 
-    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1,100"), panel)
-    check("the second flip is on the next line", panel.includes("2) ❌ 1,000"), panel)
-    check("the fourth flip keeps counting", panel.includes("4) ❌ 1,000"), panel)
+    check("the first flip is numbered and shows the new total", uncolored(panel).includes("1) ✅ 1,100"), panel)
+    check("the second flip is on the next line", uncolored(panel).includes("2) ❌ 1,000"), panel)
+    check("the fourth flip keeps counting", uncolored(panel).includes("4) ❌ 1,000"), panel)
+    check("the separators are dimmed in the panel", panel.includes(`${ESC}[0;30m,${ESC}[0m`), panel)
     eq("no file while the panel shows everything", ctx.files().length, 0)
 }},
 
@@ -455,7 +472,26 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const full = ctx.attached()
     check("the scrolled off flips are in the file", full.includes(" 1) ✅ 1,100"), full)
     check("the newest flip is in it too", full.includes("12) ✅ 2,200"), full)
+    check("the file carries no colour codes", !full.includes(ESC), full)
     check("the file carries the record alone", !full.includes("Points:") && !full.includes("```"), full)
+}},
+
+{name: "flip: \"max\" flips the cap", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await flip.callback({message: ctx.message, args: ["100", "max"], guild: guildWith("111")})
+
+    eq("fifty flips were recorded", numberedLines(ctx.attached()), 50)
+}},
+
+{name: "martingale: \"max\" aims at the cap", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 1000})
+    const ctx = fakeContext("111")
+    await martingale.callback({message: ctx.message, args: ["10", "max"], guild: guildWith("111")})
+
+    eq("fifty ladders were recorded", numberedLines(ctx.attached()), 50)
 }},
 
 {name: "martingale: a win recovers the whole losing ladder", fn: async () => {
@@ -586,7 +622,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     eq("no file landed", ctx.files().length, 0)
     eq("the panel carries the newest five instead", numberedLines(panel), 5)
-    check("the newest flip is among them", panel.includes("12) ✅ 2,200"), panel)
+    check("the newest flip is among them", uncolored(panel).includes("12) ✅ 2,200"), panel)
 }},
 
 {name: "martingale: a record that cannot be attached leaves the ladders in the panel", fn: async () => {
@@ -901,6 +937,15 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
         for (const keyword of ["all", "some", "min"]) {
             check(`${name} advertises ${keyword}`, line.includes(keyword), line)
         }
+    }
+}},
+
+{name: "help: the commands that take a count advertise the max keyword", fn: async () => {
+    const commands = await pressHelp(fakeContext("111"))
+
+    for (const name of ["!flip", "!martingale"]) {
+        const line = commands.split("\n").find(l => l.includes(name)) ?? ""
+        check(`${name} advertises max as a keyword`, line.includes("| max"), line)
     }
 }},
 
@@ -1334,6 +1379,84 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     check("the second one was turned away",
         first.replies.concat(second.replies).some(reply => reply.includes("Only one challenge at a time")),
         first.replies.concat(second.replies).join(" | "))
+}},
+
+{name: "challenge: a stake is only taken once the challenge is really open", fn: async () => {
+    await challengeModel.collection.deleteMany({})
+    await seed("111", {points: 500})
+
+    const ctx = fakeContext("111")
+    const save = challengeModel.prototype.save
+    challengeModel.prototype.save = (() => Promise.reject(new Error("no connection"))) as unknown as typeof save
+    try {
+        await challenge.callback({message: ctx.message, args: ["100"], guild: guildWith("111")})
+    } finally {
+        challengeModel.prototype.save = save
+    }
+
+    eq("nothing was opened", await challengeModel.collection.countDocuments({ownerId: "111"}), 0)
+    eq("so the stake stayed with them", (await settleUser("111")).points, 500)
+    eq("and no escrow was written to the ledger",
+        (await pointEventModel.collection.countDocuments({userId: "111", reason: "challengeEscrow"})), 0)
+    check("they were told it did not open",
+        ctx.replies.some(reply => reply.includes("Couldn't open the challenge")), ctx.replies.join(" | "))
+}},
+
+{name: "challenge: an accept that cannot be recorded takes nothing from the accepter", fn: async () => {
+    await challengeModel.collection.deleteMany({})
+    await seed("111", {points: 500})
+    await seed("222", {points: 300})
+
+    const ctx = fakeContext("111")
+    await challenge.callback({message: ctx.message, args: ["100"], guild: guildWith("111", "222")})
+
+    const said = ctx.replies.length
+    const update = challengeModel.findOneAndUpdate
+    challengeModel.findOneAndUpdate = (() => Promise.reject(new Error("no connection"))) as unknown as typeof update
+    try {
+        await ctx.press("222", "acceptBet")
+        await resolves(async () => ctx.replies.length > said ||
+            (await userModel.collection.findOne({id: "222"}))?.points !== 300, "the accept to resolve")
+        await settled()
+    } finally {
+        challengeModel.findOneAndUpdate = update
+    }
+
+    eq("the accepter was not charged", (await settleUser("222")).points, 300)
+    eq("the owner's stake is untouched", (await settleUser("111")).points, 400)
+    eq("the challenge still has nobody on the other side",
+        (await challengeModel.collection.findOne({ownerId: "111"}))?.acceptId, "")
+    check("the accepter was told it did not go through",
+        ctx.replies.some(reply => reply.includes("Couldn't accept the challenge")), ctx.replies.join(" | "))
+}},
+
+{name: "challenge: an accept that cannot be recorded leaves the owner's whole stake escrowed", fn: async () => {
+    await challengeModel.collection.deleteMany({})
+    await seed("111", {points: 500})
+    await seed("222", {points: 60})
+
+    const ctx = fakeContext("111")
+    await challenge.callback({message: ctx.message, args: ["100", "<@222>"], guild: guildWith("111", "222")})
+    eq("the stake was escrowed", (await settleUser("111")).points, 400)
+
+    const said = ctx.replies.length
+    const update = challengeModel.findOneAndUpdate
+    challengeModel.findOneAndUpdate = (() => Promise.reject(new Error("no connection"))) as unknown as typeof update
+    try {
+        await ctx.press("222", "acceptBet")
+        await resolves(async () => ctx.replies.length > said, "the accept to resolve")
+        await settled()
+    } finally {
+        challengeModel.findOneAndUpdate = update
+    }
+
+    eq("the part that would have come back off a smaller stake did not stay with the owner",
+        (await settleUser("111")).points, 400)
+    eq("so the challenge still holds every point it took",
+        (await challengeModel.collection.findOne({ownerId: "111"}))?.ownerBet, 100)
+    eq("the accepter was not charged", (await settleUser("222")).points, 60)
+    check("the accepter was told it did not go through",
+        ctx.replies.some(reply => reply.includes("Couldn't accept the challenge")), ctx.replies.join(" | "))
 }},
 
 {name: "no command wrote a message Discord would reject", fn: async () => {

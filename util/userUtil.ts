@@ -1,5 +1,6 @@
 import userModel, { IncOp, IUser, IUserUpdate, SetOp } from "../db/user"
 import { IPointChange, recordPointEvent } from "../db/pointEvent"
+import isDuplicateKeyError from "../db/duplicateKey"
 
 const MS_PER_MINUTE = 60000
 const SECONDS_PER_MINUTE = 60
@@ -135,6 +136,3 @@ const insertUser = async (id: string): Promise<IUser> => {
     }
 }
 
-const isDuplicateKeyError = (error: unknown): boolean => {
-    return typeof error === "object" && error !== null && (error as {code?: number}).code === 11000
-}

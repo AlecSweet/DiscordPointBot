@@ -1,9 +1,11 @@
 import { Message } from "discord.js";
-import moment from "moment";
+import moment from "moment-timezone";
 import { IPointOrigin } from "../db/pointEvent";
 import { IUser } from "../db/user";
 import formatPoints from "./formatPoints";
 import { inc, set, updateUser } from "./userUtil";
+
+const ZONE = "America/Chicago"
 
 interface IClaim {
     name: string
@@ -17,36 +19,32 @@ const DAILY: IClaim = {
     name: "daily",
     field: "dailyClaim",
     points: 30,
-    periodStart: () => {
-        const startDay = new Date()
-        startDay.setUTCHours(0, 0, 0, 0)
-        return startDay
-    },
-    nextPeriodStart: (start: Date) => moment(start).add(1, "day").toDate(),
+    periodStart: () => moment.tz(ZONE).startOf("day").toDate(),
+    nextPeriodStart: (start: Date) => moment.tz(start, ZONE).add(1, "day").toDate(),
 }
 
 const WEEKLY: IClaim = {
     name: "weekly",
     field: "weeklyClaim",
     points: 120,
-    periodStart: () => moment().startOf("week").toDate(),
-    nextPeriodStart: (start: Date) => moment(start).add(1, "week").toDate(),
+    periodStart: () => moment.tz(ZONE).startOf("week").toDate(),
+    nextPeriodStart: (start: Date) => moment.tz(start, ZONE).add(1, "week").toDate(),
 }
 
 const MONTHLY: IClaim = {
     name: "monthly",
     field: "monthlyClaim",
     points: 480,
-    periodStart: () => moment().startOf("month").toDate(),
-    nextPeriodStart: (start: Date) => moment(start).add(1, "month").toDate(),
+    periodStart: () => moment.tz(ZONE).startOf("month").toDate(),
+    nextPeriodStart: (start: Date) => moment.tz(start, ZONE).add(1, "month").toDate(),
 }
 
 const YEARLY: IClaim = {
     name: "yearly",
     field: "yearlyClaim",
     points: 1920,
-    periodStart: () => moment().startOf("year").toDate(),
-    nextPeriodStart: (start: Date) => moment(start).add(1, "year").toDate(),
+    periodStart: () => moment.tz(ZONE).startOf("year").toDate(),
+    nextPeriodStart: (start: Date) => moment.tz(start, ZONE).add(1, "year").toDate(),
 }
 
 export const CLAIM_TYPES = {
@@ -69,7 +67,7 @@ const claim = async (user: IUser, message: Message<boolean>, claimType: IClaim, 
 
     if (lastClaimed && periodStart.getTime() <= lastClaimed.getTime()) {
         const nextClaim = claimType.nextPeriodStart(periodStart)
-        const when = nextClaim.toLocaleString("en-US", { timeZone: "America/Chicago" })
+        const when = nextClaim.toLocaleString("en-US", { timeZone: ZONE })
         message.reply({content: `Wait until ${when} CT ${process.env.NOPPERS_EMOJI}`})
         return
     }

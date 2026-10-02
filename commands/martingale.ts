@@ -7,6 +7,7 @@ import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/fli
 import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import formatNet from "../util/formatNet";
+import { dimSeparators } from "../util/ansi";
 import formatPoints from "../util/formatPoints";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
@@ -30,7 +31,7 @@ const martingale = textCommand({
     aliases: ['shkreli', 'm', 'tarmin', 'martin'],
     category: 'gambling',
     description: 'martingale shit',
-    expectedArgs: '<# of points to start on (min 1% of your points), "all", "some" or "min"> <# of times to win (max 50) or "some">',
+    expectedArgs: '<# of points to start on (min 1% of your points), "all", "some" or "min"> <# of times to win (max 50), "some" or "max">',
     minArgs: 2,
     maxArgs: 2,
     cooldown: '3s',
@@ -59,7 +60,7 @@ interface INumberedRound {
 }
 
 const getMessageContent = (user: IUser, bet: number, rounds: string[][], wins: number, maxWins: number, net: number, final = '', record = formatRounds(rounds)): any => {
-    const header = `Points: ${formatPoints(user.points)} (${formatNet(net)})   Win: ${wins}/${maxWins}   Next Bet: ${formatPoints(bet)}`
+    const header = `Points: ${dimSeparators(formatPoints(user.points))} (${formatNet(net)})   Win: ${wins}/${maxWins}   Next Bet: ${dimSeparators(formatPoints(bet))}`
 
     const build = (body: string) =>
 `**<@${user.id}>'s Martinelli**
@@ -83,7 +84,7 @@ const renderRounds = (numbered: INumberedRound[]): string => {
         .join('\n')
 }
 
-const formatRounds = (rounds: string[][]): string => renderRounds(numberRounds(rounds).slice(-LINES))
+const formatRounds = (rounds: string[][]): string => dimSeparators(renderRounds(numberRounds(rounds).slice(-LINES)))
 
 const hasScrolledOff = (rounds: string[][]): boolean => numberRounds(rounds).length > LINES
 

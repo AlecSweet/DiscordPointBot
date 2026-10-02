@@ -8,7 +8,7 @@ import { inc, updateUser } from "./userUtil";
 const MAROONED_MS = 6 * 60 * 1000
 
 export const checkAndCancelMaroonedRps = (): Promise<void> =>
-    sweepMarooned(() => rpsModel.find({}), MAROONED_MS, "rps", cancelRps)
+    sweepMarooned(() => rpsModel.find({}).exec(), MAROONED_MS, "rps", cancelRps)
 
 export const cancelRps = (ownerId: string, rps: IRpsRet, origin: IPointOrigin = {command: "rps"}): Promise<void> =>
     whileSettling(async () => {

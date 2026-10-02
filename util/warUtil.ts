@@ -7,7 +7,7 @@ import { inc, updateUser } from "./userUtil";
 const MAROONED_MS = 20 * 60 * 1000
 
 export const checkAndCancelMaroonedWars = (): Promise<void> =>
-    sweepMarooned(() => warModel.find({}), MAROONED_MS, "war", cancelWar)
+    sweepMarooned(() => warModel.find({}).exec(), MAROONED_MS, "war", cancelWar)
 
 export const cancelWar = (ownerId: string, war: IwarRet, origin: IPointOrigin = {command: "war"}): Promise<void> =>
     whileSettling(async () => {

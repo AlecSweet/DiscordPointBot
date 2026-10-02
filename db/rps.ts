@@ -1,4 +1,4 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, models, Model } from "mongoose";
 import retryWrite from "./retryWrite";
 import * as dotenv from "dotenv"
 dotenv.config()
@@ -40,30 +40,27 @@ const rpsSchema = new Schema({
     },
     startDate: {
         type: Date,
-        default: new Date(),
+        default: Date.now,
         required: true
     }
 });
 
-const rpsModel = model['rps'] || model('rps', rpsSchema);
+const rpsModel: Model<IRpsRet> = models.rps || model<IRpsRet>('rps', rpsSchema);
 
 export default rpsModel
 
-export const getRps = async (ownerId: string): Promise<IRpsRet> => {
-    return await rpsModel.findOne({ownerId}).catch(err => {console.log(err)})
-}
+export const getRps = async (ownerId: string): Promise<IRpsRet | null> =>
+    await rpsModel.findOne({ownerId: ownerId}).catch((err) => { console.log(err); return null })
 
-export const updateRps = async (ownerId: string, rpsUpdates: IRps) => {
-    await rpsModel.findOneAndUpdate({ownerId}, {$set: {...(rpsUpdates)}}).catch(err => {console.log(err)})
-}
+export const updateRps = async (ownerId: string, rpsUpdates: IRps): Promise<boolean> =>
+    await rpsModel.findOneAndUpdate({ownerId: ownerId}, {$set: {...(rpsUpdates)}})
+        .then((updated) => updated !== null)
+        .catch((err) => { console.log(err); return false })
 
-export const incRps= async (ownerId: string, rpsUpdates: IRps) => {
-    await rpsModel.findOneAndUpdate({ownerId}, {$inc: {...(rpsUpdates)}}).catch(err => {console.log(err)})
-}
-
-export const insertRps = async (rps: IRps) => {
-    await new rpsModel({...(rps)}).save().catch(err => {console.log(err)})
-}
+export const insertRps = async (rps: IRps): Promise<boolean> =>
+    await new rpsModel({...(rps)}).save()
+        .then(() => true)
+        .catch((err) => { console.log(err); return false })
 
 export const deleteRps = async (ownerId: string): Promise<boolean> =>
-    await retryWrite(() => rpsModel.deleteOne({ownerId}), `deleting the rps for ${ownerId}`)
+    await retryWrite(() => rpsModel.deleteOne({ownerId: ownerId}), `deleting the rps for ${ownerId}`)

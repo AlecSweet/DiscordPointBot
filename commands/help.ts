@@ -11,8 +11,8 @@ Balance
   !daily   !weekly   !monthly   !yearly
 
 Gambling
-  !flip        <amount | all | some | min> [flips: max 50, bet 2%+ | some]
-  !martingale  <amount: 1%+ | all | some | min> <wins: max 50 | some>
+  !flip        <amount | all | some | min> [flips: max 50, bet 2%+ | some | max]
+  !martingale  <amount: 1%+ | all | some | min> <wins: max 50 | some | max>
   !challenge   <amount | all | some | min> [@user]
   !rps         <amount | all | some | min> [@user]
   !war         [@user]

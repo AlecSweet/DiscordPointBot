@@ -50,10 +50,19 @@ const war = textCommand({
                 return undefined
             }
 
-            await whileSettling(async () => {
-                await insertWar({ownerId: user.id, ownerBet: user.points, startDate: new Date()})
+            const opened = await whileSettling(async () => {
+                const inserted = await insertWar({ownerId: user.id, ownerBet: user.points, startDate: new Date()})
+                if (!inserted) return false
+
                 await updateUser(user.id, {points: inc(-user.points)}, {...ctx.origin, reason: "warEscrow"})
+                return true
             })
+
+            if (!opened) {
+                await message.reply({content: `Couldn't open the war ${process.env.NOPPERS_EMOJI}`})
+                return undefined
+            }
+
             return user.points
         })
 
@@ -98,6 +107,11 @@ const war = textCommand({
                 } else if (!cancelButtonHit && i.user.id !== message.author.id && i.customId === 'acceptWar') {
                     const war = await getWar(message.author.id)
 
+                    if (war === null) {
+                        i.reply({content: `War is gone ${process.env.NOPPERS_EMOJI}`})
+                        return
+                    }
+
                     if (war.acceptId && await isValidUserArg(war.acceptId, guild)) {
                         i.reply({content: `War accepted already, too slow ${process.env.NOPPERS_EMOJI}`})
                         return
@@ -109,10 +123,19 @@ const war = textCommand({
                             return undefined
                         }
 
-                        await whileSettling(async () => {
-                            await updateWar(ctx.authorId, {acceptId: targetUser.id, acceptBet: targetUser.points})
+                        const joined = await whileSettling(async () => {
+                            const recorded = await updateWar(ctx.authorId, {acceptId: targetUser.id, acceptBet: targetUser.points})
+                            if (!recorded) return false
+
                             await updateUser(targetUser.id, {points: inc(-targetUser.points)}, {...ctx.origin, reason: "warEscrow"})
+                            return true
                         })
+
+                        if (!joined) {
+                            await i.reply({content: `Couldn't join the war ${process.env.NOPPERS_EMOJI}`})
+                            return undefined
+                        }
+
                         return {targetUser: targetUser, aP: targetUser.points}
                     })
 

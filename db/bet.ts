@@ -1,4 +1,4 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, models, Model } from "mongoose";
 import * as dotenv from "dotenv"
 dotenv.config()
 
@@ -32,7 +32,7 @@ const betSchema = new Schema({
     },
     startDate: {
         type: Date,
-        default: new Date(),
+        default: Date.now,
         required: true
     },
     userBets: [{
@@ -54,16 +54,15 @@ const betSchema = new Schema({
     }],
 });
 
-const betModel = model['bet'] || model('bet', betSchema);
+const betModel: Model<IBet> = models.bet || model<IBet>('bet', betSchema);
 
 export default betModel
 
-export const getBet = async (threadId: string): Promise<IBet> => {
-    return await betModel.findOne({threadId})
-}
+export const getBet = async (threadId: string): Promise<IBet | null> =>
+    await betModel.findOne({threadId: threadId})
 
 export const updateBet = async (threadId: string, betUpdates: IBet) => {
-    await betModel.findOneAndUpdate({threadId}, {$set: {...(betUpdates)}})
+    await betModel.findOneAndUpdate({threadId: threadId}, {$set: {...(betUpdates)}})
 }
 
 export const insertBet = async (bet: IBet) => {
@@ -71,5 +70,5 @@ export const insertBet = async (bet: IBet) => {
 }
 
 export const deleteBet = async (threadId: string) => {
-    return await betModel.deleteOne({threadId})
+    return await betModel.deleteOne({threadId: threadId})
 }
