@@ -7,7 +7,6 @@ import { checkAndAssignDusted, updateUserLoss, updateUserWin } from "../util/fli
 import { parseCount, parsePoints } from "../util/args";
 import fitToMessageLimit from "../util/fitToMessageLimit";
 import formatNet from "../util/formatNet";
-import { dimSeparators } from "../util/ansi";
 import formatPoints from "../util/formatPoints";
 import sleep from "../util/sleep";
 import countdownTo from "../util/countdown";
@@ -72,7 +71,7 @@ const getMessageContent =(user: IUser, results: IFlipResult[], maxFlips: number,
     const wins = results.filter(result => result.won).length
     const losses = results.length - wins
 
-    const header = `Points: ${dimSeparators(formatPoints(user.points))} (${formatNet(net)})   Flip: ${results.length}/${maxFlips} (${wins}-${losses})   Bet: ${dimSeparators(formatPoints(bet))}`
+    const header = `Points: ${formatPoints(user.points)} (${formatNet(net)})   Flip: ${results.length}/${maxFlips} (${wins}-${losses})   Bet: ${formatPoints(bet)}`
 
     const build = (body: string) =>
 `**<@${user.id}>'s Flips**
@@ -93,7 +92,7 @@ const renderFlips = (results: IFlipResult[], from: number): string => {
 }
 
 const formatRecord = (results: IFlipResult[]): string =>
-    dimSeparators(renderFlips(results.slice(-LINES), Math.max(0, results.length - LINES)))
+    renderFlips(results.slice(-LINES), Math.max(0, results.length - LINES))
 
 
 const getNetLine = (net: number): string => {

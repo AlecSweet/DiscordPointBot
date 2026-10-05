@@ -228,8 +228,6 @@ const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
 }
 
 const ESC = String.fromCharCode(27)
-const uncolored = (text: string): string =>
-    text.split(ESC).map((part, index) => index === 0 ? part : part.slice(part.indexOf("m") + 1)).join("")
 
 const numberedLines = (panel: string): number =>
     panel.split("\n").filter(line => /^ *[0-9]+\) /.test(line)).length
@@ -405,10 +403,9 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await flip.callback({message: ctx.message, args: ["100", "4"], guild: guildWith("111")})
     const panel = written[written.length - 1]
 
-    check("the first flip is numbered and shows the new total", uncolored(panel).includes("1) ✅ 1,100"), panel)
-    check("the second flip is on the next line", uncolored(panel).includes("2) ❌ 1,000"), panel)
-    check("the fourth flip keeps counting", uncolored(panel).includes("4) ❌ 1,000"), panel)
-    check("the separators are dimmed in the panel", panel.includes(`${ESC}[0;30m,${ESC}[0m`), panel)
+    check("the first flip is numbered and shows the new total", panel.includes("1) ✅ 1,100"), panel)
+    check("the second flip is on the next line", panel.includes("2) ❌ 1,000"), panel)
+    check("the fourth flip keeps counting", panel.includes("4) ❌ 1,000"), panel)
     eq("no file while the panel shows everything", ctx.files().length, 0)
 }},
 
@@ -622,7 +619,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
 
     eq("no file landed", ctx.files().length, 0)
     eq("the panel carries the newest five instead", numberedLines(panel), 5)
-    check("the newest flip is among them", uncolored(panel).includes("12) ✅ 2,200"), panel)
+    check("the newest flip is among them", panel.includes("12) ✅ 2,200"), panel)
 }},
 
 {name: "martingale: a record that cannot be attached leaves the ladders in the panel", fn: async () => {
