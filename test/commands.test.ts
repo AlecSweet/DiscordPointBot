@@ -155,7 +155,9 @@ interface IFakeInteraction {
 
 type IFakeCollectorHandler = (interaction?: IFakeInteraction) => Promise<void>
 
-const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
+let messagesSent = 0
+
+const fakeContext =(authorId: string, {rejectAttachments = false} = {}) => {
     const replies: string[] = []
     const privateReplies: IFakeInteractionPayload[] = []
     const edits: IFakePayload[] = []
@@ -190,7 +192,7 @@ const fakeContext = (authorId: string, {rejectAttachments = false} = {}) => {
         send: async (payload: IFakePayload) => { apply(payload); sent.channel = channel; return sent }
     }
     const message = {
-        id: `msg-${authorId}`,
+        id: `msg-${authorId}-${++messagesSent}`,
         author: {id: authorId, username: "tester"},
         channel: channel,
         reply: async (payload: {content: string}) => { replies.push(payload.content); record(payload.content); return sent },
@@ -313,6 +315,44 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     await flip.callback({message: ctx.message, args: ["all", "5"], guild: guildWith("111")})
 
     eq("10 doubled five times", (await settleUser("111")).points, 320)
+}},
+
+{name: "flip all: a message delivered to two bots only runs once", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 10000})
+    const ctx = fakeContext("111")
+    const deliver = () => flip.callback({message: ctx.message, args: ["all", "3"], guild: guildWith("111")})
+    await Promise.all([deliver(), deliver()])
+
+    eq("10000 doubled three times, once", (await settleUser("111")).points, 80000)
+    eq("three flips in the ledger, not six", await pointEventModel.countDocuments({userId: "111", reason: "flip"}), 3)
+}},
+
+{name: "flip: a bot that is shutting down leaves the message for the bot that is not", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 100})
+    const ctx = fakeContext("111")
+    const deliver = () => flip.callback({message: ctx.message, args: ["100"], guild: guildWith("111")})
+
+    setShuttingDown(true)
+    try {
+        await deliver()
+    } finally {
+        setShuttingDown(false)
+    }
+    check("the shutting down bot says so", ctx.replies.some(reply => reply.includes("Restarting")), ctx.replies.join(" | "))
+
+    await deliver()
+    eq("the other bot still flips it", (await settleUser("111")).points, 200)
+}},
+
+{name: "flip: separate messages from the same member each run", fn: async () => {
+    rollSequence(255)
+    await seed("111", {points: 100})
+    await flip.callback({message: fakeContext("111").message, args: ["100"], guild: guildWith("111")})
+    await flip.callback({message: fakeContext("111").message, args: ["200"], guild: guildWith("111")})
+
+    eq("100 + 100 + 200", (await settleUser("111")).points, 400)
 }},
 
 {name: "flip: more flips than the cap is refused", fn: async () => {
@@ -1054,7 +1094,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     eq("balances follow the flips", events.map(event => event.balance).join(","), "1100,1000,1100,1000")
     check("all tagged as flips", events.every(event => event.reason === "flip"), JSON.stringify(events.map(event => event.reason)))
     check("under the flip command", events.every(event => event.command === "flip"), JSON.stringify(events.map(event => event.command)))
-    check("pointing back at the command message", events.every(event => event.messageId === "msg-111"),
+    check("pointing back at the command message", events.every(event => event.messageId === ctx.message.id),
         JSON.stringify(events.map(event => event.messageId)))
     eq("the last balance is the stored balance", events[events.length - 1]?.balance, (await settleUser("111")).points)
 }},
@@ -1206,7 +1246,7 @@ const tests: {name: string, fn: () => Promise<void>}[] = [
     const gift = await pointEventModel.find({reason: {$in: ["giftSent", "giftReceived"]}}).lean()
     eq("both sides recorded", gift.length, 2)
     eq("under the one message", gift[0].messageId, gift[1].messageId)
-    check("which is the command message", gift[0].messageId === "msg-111", `${gift[0].messageId}`)
+    check("which is the command message", gift[0].messageId === ctx.message.id, `${gift[0].messageId}`)
     check("the two sides are different people", gift[0].userId !== gift[1].userId,
         `${gift[0].userId} / ${gift[1].userId}`)
 }},

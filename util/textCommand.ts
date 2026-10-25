@@ -1,6 +1,7 @@
 import { Guild, Message, TextChannel } from "discord.js"
 import { ICallback, ICommand } from "../wokTypes"
 import { IPointOrigin } from "../db/pointEvent"
+import { claimMessage } from "../db/messageClaim"
 import { isShuttingDown } from "./shuttingDown"
 import * as dotenv from "dotenv"
 dotenv.config()
@@ -29,6 +30,13 @@ const textCommand = (
 
         if (message.channel.type !== "GUILD_TEXT") {
             await message.reply({content: `Only for text channels ${process.env.NOPPERS_EMOJI}`})
+            return
+        }
+
+        const claimed = await claimMessage(message.id).catch((err): undefined => { console.log(err); return undefined })
+        if (claimed === undefined) return
+        if (!claimed) {
+            console.log(`${spec.name} message ${message.id} was already claimed by another instance`)
             return
         }
 
